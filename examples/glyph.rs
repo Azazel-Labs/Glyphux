@@ -7,9 +7,13 @@ use msdfr::{
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    const USAGE: &str = "usage: glyph <font.ttf> <char> [out.png]";
     let args: Vec<String> = std::env::args().collect();
-    let data = std::fs::read(&args[1])?;
-    let c = args[2].chars().next().unwrap();
+    let (Some(path), Some(c)) = (args.get(1), args.get(2).and_then(|s| s.chars().next())) else {
+        eprintln!("{USAGE}");
+        std::process::exit(2);
+    };
+    let data = std::fs::read(path)?;
     let font = Font::from_bytes(&data, 0, FontScaling::EmNormalized)?;
     let mut shape = font.glyph(c)?.shape;
 

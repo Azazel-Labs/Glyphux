@@ -7,11 +7,23 @@ use msdfr_gpu::text::{Align, TextStyle, layout_text};
 use msdfr_gpu::units::{Units, px};
 use msdfr_gpu::{AtlasConfig, GlyphAtlas, Shaper, ShapingFont, TextRenderer, default_device, msdfr, wgpu};
 
+const USAGE: &str = "usage: glyph_zoom <font> <text> <level> <px> <out.png> [ec: auto|off|fast|full]";
+
+/// Prints `msg` and the usage line, and exits.
+fn fail(msg: &str) -> ! {
+    eprintln!("{msg}\n{USAGE}");
+    std::process::exit(2)
+}
+
 fn main() {
     let a: Vec<String> = std::env::args().collect();
-    let level: u32 = a[3].parse().unwrap();
-    let size: f32 = a[4].parse().unwrap();
-    let font = ShapingFont::new(0, Arc::new(std::fs::read(&a[1]).unwrap()), 0).unwrap();
+    if a.len() < 6 {
+        fail("missing arguments");
+    }
+    let level: u32 = a[3].parse().unwrap_or_else(|_| fail("the level is not a number"));
+    let size: f32 = a[4].parse().unwrap_or_else(|_| fail("the size is not a number"));
+    let data = std::fs::read(&a[1]).unwrap_or_else(|e| fail(&format!("{}: {e}", a[1])));
+    let font = ShapingFont::new(0, Arc::new(data), 0).unwrap_or_else(|| fail(&format!("{}: not a font", a[1])));
     // level 0: the atlas' own level choice (MAG / MINL override magnification / min_level).
     let mut config = if level == 0 {
         let mut c = AtlasConfig::default();

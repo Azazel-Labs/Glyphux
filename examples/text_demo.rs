@@ -9,14 +9,26 @@ use std::path::Path;
 use msdfr_gpu::demo::Scene;
 use msdfr_gpu::{default_device, msdfr, wgpu};
 
+const USAGE: &str = "usage: text_demo <font> [width] [height] [out_prefix] [frames]";
+
+/// Prints `msg` and the usage line, and exits.
+fn fail(msg: &str) -> ! {
+    eprintln!("{msg}\n{USAGE}");
+    std::process::exit(2)
+}
+
 fn main() {
     let a: Vec<String> = std::env::args().collect();
-    let font_path = Path::new(&a[1]);
-    let data = std::fs::read(font_path).expect("font");
-    let w: u32 = a.get(2).map_or(1280, |s| s.parse().unwrap());
-    let h: u32 = a.get(3).map_or(720, |s| s.parse().unwrap());
+    let font_path = Path::new(a.get(1).unwrap_or_else(|| fail("no font given")));
+    let data = std::fs::read(font_path).unwrap_or_else(|e| fail(&format!("{}: {e}", font_path.display())));
+    let number = |i: usize, default: u32| {
+        a.get(i)
+            .map_or(Ok(default), |s| s.parse())
+            .unwrap_or_else(|_| fail(&format!("not a number: {}", a[i])))
+    };
+    let (w, h) = (number(2, 1280), number(3, 720));
     let prefix = a.get(4).cloned().unwrap_or("demo".into());
-    let frames: u32 = a.get(5).map_or(3, |s| s.parse().unwrap());
+    let frames = number(5, 3);
     let (adapter, device, queue) = default_device().expect("device");
     println!("adapter: {:?}", adapter.get_info().name);
     let format = wgpu::TextureFormat::Rgba8UnormSrgb;
