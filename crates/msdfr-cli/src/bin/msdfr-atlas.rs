@@ -298,6 +298,12 @@ fn main() {
             font.missing.len()
         );
     }
+    if font.kerning_incomplete {
+        eprintln!(
+            "warning: the font's class-based kerning was skipped (more than {} glyphs)",
+            msdfr_atlas::CLASS_KERNING_LIMIT
+        );
+    }
     let t_load = Instant::now();
 
     let c = &cli.constraint;

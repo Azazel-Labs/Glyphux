@@ -157,7 +157,13 @@ pub struct FontGeometry {
     pub kerning: Vec<(usize, usize, f64)>,
     /// Requested code points that the font doesn't contain.
     pub missing: Vec<u32>,
+    /// The font's class-based `kern` subtables were left out of `kerning`: they can only be
+    /// queried pair by pair, which is skipped beyond [`CLASS_KERNING_LIMIT`] glyphs.
+    pub kerning_incomplete: bool,
 }
+
+/// Up to this many glyphs, class-based `kern` subtables are queried for every pair of glyphs.
+pub const CLASS_KERNING_LIMIT: usize = 2048;
 
 impl FontGeometry {
     /// Loads glyphs from font data (face `index`), with optional variation axis values.
@@ -232,13 +238,15 @@ impl FontGeometry {
             }
         });
         let mut kerning = Vec::new();
+        let mut kerning_incomplete = false;
         if opts.kerning {
             let (pairs, class_based) = font.kerning_pairs();
+            kerning_incomplete = class_based && glyphs.len() > CLASS_KERNING_LIMIT;
             let mut slot = std::collections::HashMap::new();
             for (i, g) in glyphs.iter().enumerate() {
                 slot.entry(g.glyph_index).or_insert(i);
             }
-            if class_based && glyphs.len() <= 2048 {
+            if class_based && !kerning_incomplete {
                 // Class-based subtables can only be queried per pair.
                 let rows: Vec<usize> = (0..glyphs.len()).collect();
                 let found = par_map(&rows, 0, |&i| {
@@ -270,6 +278,7 @@ impl FontGeometry {
             metrics,
             kerning,
             missing,
+            kerning_incomplete,
         })
     }
 }
@@ -825,6 +834,7 @@ mod tests {
             },
             kerning: vec![],
             missing: vec![],
+            kerning_incomplete: false,
         }
     }
 
