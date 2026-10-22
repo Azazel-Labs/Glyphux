@@ -51,7 +51,7 @@ cannot run the generator (no compute shaders).
 
 ## Files
 
-* `src/lib.rs` — canvas, adapter/device, surface (sRGB view), `requestAnimationFrame` loop.
-* `index.html` — keeps the canvas at CSS size × `devicePixelRatio`, loads `pkg/`.
-* `assets/` — the fonts: Inter (embedded in the wasm), its variable version and the Noto Sans
+* `src/lib.rs`: canvas, adapter/device, surface (sRGB view), `requestAnimationFrame` loop.
+* `index.html`: keeps the canvas at CSS size × `devicePixelRatio`, loads `pkg/`.
+* `assets/`: the fonts, Inter (embedded in the wasm), its variable version and the Noto Sans
   fallbacks (loaded by `index.html`), all under the SIL OFL; see `assets/README.md`.

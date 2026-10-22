@@ -368,7 +368,7 @@ fn pipeline() -> String {
             svg.w - 2.0 * x0 + 28.0
         ));
         svg.add(format!(
-            r#"<text x="{x0}" y="{:.1}" font-size="13" fill="{INK}" font-weight="600">{title}<tspan fill="{MUTED}" font-size="12" font-weight="400"> — {sub}</tspan></text>"#,
+            r#"<text x="{x0}" y="{:.1}" font-size="13" fill="{INK}" font-weight="600">{title}<tspan fill="{MUTED}" font-size="12" font-weight="400"> · {sub}</tspan></text>"#,
             y + 14.0
         ));
     }

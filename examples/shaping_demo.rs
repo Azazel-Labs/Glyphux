@@ -21,7 +21,7 @@ const LINES: &[Line] = &[
     (
         "/usr/share/fonts/opentype/inter/Inter-Regular.otf",
         &[],
-        "Kerning: AVATAR, Type, WAVY — 1/2 → ½",
+        "Kerning: AVATAR, Type, WAVY · 1/2 → ½",
         34.0,
     ),
     (
@@ -39,7 +39,7 @@ const LINES: &[Line] = &[
     (
         "/usr/share/fonts/truetype/freefont/FreeSerif.ttf",
         &[],
-        "नमस्ते दुनिया — क्षत्रिय हिन्दी",
+        "नमस्ते दुनिया · क्षत्रिय हिन्दी",
         40.0,
     ),
     (

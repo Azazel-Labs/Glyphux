@@ -1,8 +1,8 @@
 //! CPU preparation of glyphs off the calling thread.
 //!
 //! [`crate::GlyphAtlas::get`] only loads an outline and reserves its atlas rectangle (that is
-//! all layout needs); the rest of the CPU work — normalize, orient, color edges, curve
-//! preparation, tile binning, corner protection — is queued here and runs on worker threads
+//! all layout needs); the rest of the CPU work (normalize, orient, color edges, curve
+//! preparation, tile binning, corner protection) is queued here and runs on worker threads
 //! while the application goes on with its frame. [`crate::GlyphAtlas::flush`] collects the
 //! results, doing any job no worker has started yet itself, so every glyph requested in a
 //! frame is generated in that frame. Detail probes share the workers at lower priority; their

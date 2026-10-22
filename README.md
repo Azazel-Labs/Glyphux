@@ -169,7 +169,7 @@ field.
 
 ## Better / faster / stronger
 
-**Faster** — 3.2–3.9× faster than msdfgen 1.13 single-threaded for MSDF/MTSDF, more with threads:
+**Faster:** 3.2–3.9× faster than msdfgen 1.13 single-threaded for MSDF/MTSDF, more with threads:
 
 | Workload (94 printable ASCII glyphs, error correction on) | msdfgen | msdfr | speedup |
 |---|---:|---:|---:|
@@ -209,7 +209,7 @@ Where the speed comes from (none of it changes results):
   base scan flagged, so msdfgen's default "auto" mode costs almost nothing extra.
 * **Built-in threading** across rows of large outputs and a `par_map` helper for atlases.
 
-**Stronger** — exactness and robustness:
+**Stronger:** exactness and robustness.
 * *Bit-identical to msdfgen* for TrueType fonts in all four modes and all error-correction
   modes when given the same colored shape (3 fonts × 94 glyphs × 4 modes, ~6 M values,
   0 differences; CFF fonts within 2.4e-7).
@@ -227,7 +227,7 @@ Where the speed comes from (none of it changes results):
   by the orthogonality rule rather than by rounding.
 * Cusps are deconverged toward the side each curve actually bends to; zero-length edges are dropped.
 
-**Better** — defaults and features:
+**Better:** defaults and features.
 * Ink-trap-aware edge coloring by default: fewer visible artifacts than msdfgen's CLI default
   (pixels off by > 0.5 when rendered at 8×, vs. exact rasterization, all printable ASCII):
 
@@ -238,7 +238,7 @@ Where the speed comes from (none of it changes results):
   | Inter 24 px, range 3 | 598 | **411** |
   | Inter 32 px, range 4 | 319 | **187** |
 
-  (msdfgen with `-coloringstrategy inktrap` gets 285 / 67 / 400 / 187 — the field
+  (msdfgen with `-coloringstrategy inktrap` gets 285 / 67 / 400 / 187: the field
   generation itself is equivalent; the gain is the default.)
 * Zero required dependencies; font loading uses the pure-Rust `ttf-parser` (optional
   `font` feature, on by default) including CFF2 and variable fonts (`-fontvar wght=700`).
@@ -246,8 +246,8 @@ Where the speed comes from (none of it changes results):
   `<polygon>`, nested `<g>` transforms, `fill-rule`, `display:none` / `fill="none"`, and the
   union of all shapes (msdfgen without Skia uses only the last path).
 * Built-in PNG output with its own deflate (lazy-matching LZ77, dynamic Huffman blocks,
-  parallel chunks for large images) — atlases 25–30% smaller than msdf-atlas-gen's — plus
-  BMP, FL32, RGBA, raw and text output.
+  parallel chunks for large images), giving atlases 25–30% smaller than
+  msdf-atlas-gen's, plus BMP, FL32, RGBA, raw and text output.
 * `msdfgen`-compatible text shape descriptions (read and write) and command line.
 
 ## Font atlases (`msdfr-atlas`)

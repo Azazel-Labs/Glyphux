@@ -5,12 +5,12 @@ GPU generation of SDF / PSDF / MSDF / MTSDF glyph fields with [wgpu](https://wgp
 atlases: a glyph cache that picks the field resolution from the size text is drawn at, and an
 MSDF text renderer on top of it. Native (Vulkan, Metal, DX12, GL) and the web (WebGPU).
 
-The fields are the ones [`msdfr`](../msdfr) makes on the CPU — same edge selection, same
-overlapping contour combiner, same error correction — not an approximation of them: across
-four fonts, two sizes and all four field types the GPU output matches the CPU's to about
-3·10⁻⁶ (f32 vs f64), except where two edges are *exactly* as close (symmetric geometry) and
-f32 breaks the tie the other way — at most a few dozen of ~600 000 values, see
-[Validation](#validation).
+The fields are the ones [`msdfr`](../msdfr) makes on the CPU, not an approximation of them:
+the same edge selection, the same overlapping contour combiner and the same error
+correction. Across four fonts, two sizes and all four field types, the GPU output matches the
+CPU's to about 3·10⁻⁶ (f32 vs f64). The exception is where two edges are *exactly* as close
+(symmetric geometry) and f32 breaks the tie the other way: at most a few dozen of ~600 000
+values, see [Validation](#validation).
 
 ## How it works
 
@@ -37,8 +37,8 @@ and the passes over them. In short:
   culling, so nothing that could be nearest is ever skipped; bounds are widened by 10⁻⁴ for f32.
 * **Real kernels.** Lines, quadratics (safeguarded Newton on monotone pieces of the cubic
   derivative) and cubics (msdfr's interval subdivision of the quintic with precomputed
-  Bernstein data per interval) — no flattening, so corners and curvature are exact at any
-  magnification.
+  Bernstein data per interval). Nothing is flattened, so corners and curvature are exact at
+  any magnification.
 * **Batched.** Every glyph of a frame goes into one set of buffers and one dispatch per pass
   (work list of `(glyph, tile)` pairs, 2D dispatch beyond 65535 workgroups).
 * **WebGPU limits.** At most 8 storage buffers per pass, no `f64`, no `inf` literals,
@@ -135,7 +135,7 @@ queue.submit([encoder.finish()]);
 
 ### Shaping (`shaping` feature, on by default)
 
-[HarfRust](https://github.com/harfbuzz/harfrust) — the HarfBuzz project's own Rust port —
+[HarfRust](https://github.com/harfbuzz/harfrust), the HarfBuzz project's own Rust port,
 does the OpenType shaping: ligatures, GPOS kerning and mark placement, contextual forms,
 Indic reordering and conjuncts, Arabic joining, Thai marks, variable font instances and any
 feature you list (`shaper.features = vec!["smcp".parse()?, "-liga".parse()?]`). Around it,
@@ -154,7 +154,7 @@ msdfr's loader, so the shaper's glyph ids index the atlas directly.
   `ShapingFont::has_glyph`.)
 
 Checked against HarfBuzz 8.3 (glyph ids, clusters, advances and offsets), all 11 test lines
-matched exactly — Latin ligatures with and without `liga`, kerning,
+matched exactly: Latin ligatures with and without `liga`, kerning,
 `tnum,frac,calt`, Arabic, pointed Hebrew, stacked Vietnamese marks, Devanagari conjuncts in
 two fonts, Thai. The `shaping_demo` example (top-level `examples/`) renders lines like these
 through the atlas.
@@ -162,10 +162,10 @@ through the atlas.
 ### What it costs
 
 The calling thread does only what layout needs. `GlyphAtlas::get` for a new glyph loads its
-outline, measures its bounds and reserves its atlas rectangle — about 5 µs, and the returned
-`AtlasGlyph` (quad, texture coordinates) is final. Everything else — normalize, orient, edge
-coloring, curve preparation, tile binning, corner protection and the detail probe — is queued
-to worker threads (`worker_threads`, default: cores − 1, at most 4) and runs while the app
+outline, measures its bounds and reserves its atlas rectangle. That takes about 5 µs, and the
+returned `AtlasGlyph` (quad, texture coordinates) is final. Everything else (normalize, orient,
+edge coloring, curve preparation, tile binning, corner protection and the detail probe) is
+queued to worker threads (`worker_threads`, default: cores − 1, at most 4) and runs while the app
 goes on with its frame. `flush` joins them: it runs any job no worker has started yet itself,
 waits for the rest, records the upload into persistent buffers (grown to the next power of
 two, never recreated in steady state) and records the passes. Uploads go through the command
@@ -249,7 +249,7 @@ values differing by more than 10⁻³:
 | | 45 / 6 | 3.1·10⁻⁶ | 1 / 0 | 1 / 0 / 0 |
 
 MTSDF behaves like MSDF. Every difference inspected is an exact tie: two edges at the same
-distance (the dots of ":", or a texel on the symmetry axis of "v", "x", "W" — at 45 px the
+distance (the dots of ":", or a texel on the symmetry axis of "v", "x", "W": at 45 px the
 middle column is exactly on it), where f64 and f32 pick different, equally valid edges. Usually
 that changes one channel and not the median; on a symmetry axis it can change two. Error
 correction uses an explicit tolerance for the analogous tie (which texel of an equidistant
