@@ -14,22 +14,27 @@ msdfr-gpu = { workspace = true, features = ["demo"] }
 [[bin]]
 name = "glyph"
 path = "glyph.rs"
+doc = false
 
 [[bin]]
 name = "text_demo"
 path = "text_demo.rs"
+doc = false
 
 [[bin]]
 name = "glyph_zoom"
 path = "glyph_zoom.rs"
+doc = false
 
 [[bin]]
 name = "shaping_demo"
 path = "shaping_demo.rs"
+doc = false
 
 [[bin]]
 name = "figures"
 path = "figures.rs"
+doc = false
 
 [lints]
 workspace = true

@@ -14,13 +14,17 @@ msdfr = { workspace = true, features = ["font"] }
 msdfr-atlas.workspace = true
 clap.workspace = true
 
+# The binaries share their names with the library crates: documenting them would
+# overwrite those crates' docs (cargo#6313).
 [[bin]]
 name = "msdfr"
 path = "src/bin/msdfr.rs"
+doc = false
 
 [[bin]]
 name = "msdfr-atlas"
 path = "src/bin/msdfr-atlas.rs"
+doc = false
 
 [lints]
 workspace = true
