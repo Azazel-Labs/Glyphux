@@ -2,6 +2,8 @@
 //! reader supporting `<path>`, `<rect>`, `<circle>`, `<ellipse>`, `<polygon>`, nested `<g>`
 //! transforms and `fill-rule`.
 
+use std::borrow::Cow;
+
 use crate::edge::Edge;
 use crate::math::Vec2;
 use crate::shape::{Contour, FillRule, Shape};
@@ -528,17 +530,50 @@ pub struct SvgShape {
 
 struct Element<'a> {
     name: &'a str,
-    attrs: Vec<(&'a str, String)>,
+    attrs: Vec<(&'a str, Cow<'a, str>)>,
     self_closing: bool,
     closing: bool,
 }
 
-fn decode_entities(s: &str) -> String {
-    s.replace("&quot;", "\"")
-        .replace("&apos;", "'")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&amp;", "&")
+/// Decodes XML's predefined and numeric character references in one pass; values without
+/// any (nearly all) are borrowed as they are. Unknown references are kept literally.
+fn decode_entities(s: &str) -> Cow<'_, str> {
+    if !s.contains('&') {
+        return Cow::Borrowed(s);
+    }
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(i) = rest.find('&') {
+        out.push_str(&rest[..i]);
+        rest = &rest[i..];
+        let decoded = rest.find(';').and_then(|end| {
+            let c = match &rest[1..end] {
+                "quot" => '"',
+                "apos" => '\'',
+                "lt" => '<',
+                "gt" => '>',
+                "amp" => '&',
+                num => {
+                    let num = num.strip_prefix('#')?;
+                    let code = match num.strip_prefix(['x', 'X']) {
+                        Some(hex) => u32::from_str_radix(hex, 16).ok()?,
+                        None => num.parse().ok()?,
+                    };
+                    char::from_u32(code)?
+                }
+            };
+            Some((c, end + 1))
+        });
+        if let Some((c, len)) = decoded {
+            out.push(c);
+            rest = &rest[len..];
+        } else {
+            out.push('&');
+            rest = &rest[1..];
+        }
+    }
+    out.push_str(rest);
+    Cow::Owned(out)
 }
 
 /// Iterates over XML tags (ignores comments, processing instructions, CDATA, doctype).
@@ -638,7 +673,7 @@ fn tags(doc: &str) -> Vec<Element<'_>> {
 }
 
 fn attr<'a>(e: &'a Element<'_>, key: &str) -> Option<&'a str> {
-    e.attrs.iter().find(|(k, _)| *k == key).map(|(_, v)| v.as_str())
+    e.attrs.iter().find(|(k, _)| *k == key).map(|(_, v)| v.as_ref())
 }
 
 /// Reads a property from the attribute or the `style` attribute.
@@ -893,6 +928,12 @@ mod tests {
         assert_eq!((b.left, b.bottom, b.right, b.top), (10.0, 10.0, 30.0, 20.0));
         // Evenodd hole must be oriented opposite to its outer contour.
         assert_eq!(s.shape.contours[1].winding(), -s.shape.contours[2].winding());
+    }
+
+    #[test]
+    fn entities() {
+        assert!(matches!(decode_entities("M0 0h1"), Cow::Borrowed(_)));
+        assert_eq!(decode_entities("a&lt;b&amp;&#65;&#x42;&bogus;&"), "a<b&AB&bogus;&");
     }
 
     #[test]
