@@ -57,10 +57,6 @@ impl Affine {
             f: self.b * o.e + self.d * o.f + self.f,
         }
     }
-
-    fn det(&self) -> f64 {
-        self.a * self.d - self.b * self.c
-    }
 }
 
 /// Parses an SVG `transform` attribute.
@@ -678,38 +674,53 @@ fn ellipse_path(cx: f64, cy: f64, rx: f64, ry: f64) -> String {
     )
 }
 
+/// What an element inherits from its ancestors.
+#[derive(Clone, Copy)]
+struct Inherited {
+    xf: Affine,
+    rule: Option<FillRule>,
+    /// Inside an element that is never rendered (`defs`, `clipPath`…, `display: none`).
+    hidden: bool,
+    /// `fill: none` in effect (a property that descendants can override).
+    no_fill: bool,
+}
+
 /// Loads an SVG document.
 pub fn load_svg(doc: &str, selection: SvgPathSelection) -> Result<SvgShape, SvgError> {
-    let mut stack: Vec<(String, Affine, Option<FillRule>, bool)> = Vec::new();
-    let mut xf = Affine::IDENTITY;
-    let mut inherited_rule: Option<FillRule> = None;
-    let mut hidden = false;
+    let mut stack: Vec<(&str, Inherited)> = Vec::new();
+    let mut cur = Inherited {
+        xf: Affine::IDENTITY,
+        rule: None,
+        hidden: false,
+        no_fill: false,
+    };
     let mut view_box = None;
     let mut parts: Vec<Shape> = Vec::new();
     for e in tags(doc) {
         if e.closing {
-            if let Some(pos) = stack.iter().rposition(|(n, ..)| n == e.name) {
-                let (_, x, r, h) = stack[pos].clone();
-                xf = x;
-                inherited_rule = r;
-                hidden = h;
+            if let Some(pos) = stack.iter().rposition(|(n, _)| *n == e.name) {
+                cur = stack[pos].1;
                 stack.truncate(pos);
             }
             continue;
         }
         let local = match attr(&e, "transform") {
-            Some(t) => xf.mul(&parse_transform(t)?),
-            None => xf,
+            Some(t) => cur.xf.mul(&parse_transform(t)?),
+            None => cur.xf,
         };
         let rule = match prop(&e, "fill-rule").as_deref() {
             Some("evenodd") => Some(FillRule::EvenOdd),
             Some("nonzero") => Some(FillRule::NonZero),
-            _ => inherited_rule,
+            _ => cur.rule,
         };
-        let is_hidden = hidden
+        let is_hidden = cur.hidden
             || matches!(e.name, "defs" | "clipPath" | "mask" | "symbol" | "pattern" | "marker")
-            || prop(&e, "display").as_deref() == Some("none")
-            || prop(&e, "fill").as_deref() == Some("none");
+            || prop(&e, "display").as_deref() == Some("none");
+        let no_fill = match prop(&e, "fill").as_deref() {
+            Some("none") => true,
+            Some(_) => false,
+            None => cur.no_fill,
+        };
         let path_data: Option<String> = match e.name {
             "svg" => {
                 if view_box.is_none() {
@@ -778,11 +789,9 @@ pub fn load_svg(doc: &str, selection: SvgPathSelection) -> Result<SvgShape, SvgE
             _ => None,
         };
         if let Some(d) = path_data {
-            if !is_hidden {
+            if !is_hidden && !no_fill {
+                // (Mirroring transforms reverse contours; orienting them below fixes that.)
                 let mut s = parse_path_data_with(&d, local)?;
-                if local.det() < 0.0 {
-                    // Mirroring transforms reverse orientation; orientation is recomputed below anyway.
-                }
                 s.normalize();
                 s.orient_contours(rule.unwrap_or(FillRule::NonZero));
                 parts.push(s);
@@ -794,13 +803,18 @@ pub fn load_svg(doc: &str, selection: SvgPathSelection) -> Result<SvgShape, SvgE
                 "path" | "rect" | "circle" | "ellipse" | "polygon" | "polyline" | "line"
             )
         {
-            stack.push((e.name.to_string(), xf, inherited_rule, hidden));
-            xf = local;
-            inherited_rule = rule;
-            hidden = is_hidden && e.name != "svg";
+            stack.push((e.name, cur));
+            cur = Inherited {
+                xf: local,
+                rule,
+                hidden: is_hidden && e.name != "svg",
+                // Icon sets often put fill="none" (with a stroke) on the root: the outlines are
+                // still wanted.
+                no_fill: no_fill && e.name != "svg",
+            };
         } else if !e.self_closing {
             // Elements like <path ...></path>: push so the closing tag restores state correctly.
-            stack.push((e.name.to_string(), xf, inherited_rule, hidden));
+            stack.push((e.name, cur));
         }
     }
     let mut shape = Shape::new();
@@ -879,5 +893,19 @@ mod tests {
         assert_eq!((b.left, b.bottom, b.right, b.top), (10.0, 10.0, 30.0, 20.0));
         // Evenodd hole must be oriented opposite to its outer contour.
         assert_eq!(s.shape.contours[1].winding(), -s.shape.contours[2].winding());
+    }
+
+    #[test]
+    fn fill_is_inherited_and_overridable() {
+        let doc = r##"<svg fill="none">
+            <g fill="none"><path fill="#000" d="M0 0h1v1h-1z"/><path d="M2 0h1v1h-1z"/></g>
+            <g style="fill:none"><g><rect width="1" height="1" style="fill: red"/></g></g>
+            <path d="M5 0h1v1h-1z"/>
+            <defs><path fill="#000" d="M7 0h1v1h-1z"/></defs>
+        </svg>"##;
+        let s = load_svg(doc, SvgPathSelection::All).unwrap();
+        // The overriding path, the red rect and the path under the root's fill="none".
+        let lefts: Vec<f64> = s.shape.contours.iter().map(|c| c.bounds().left).collect();
+        assert_eq!(lefts, [0.0, 0.0, 5.0]);
     }
 }
