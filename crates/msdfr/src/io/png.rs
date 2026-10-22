@@ -2,6 +2,11 @@
 //! deflate compressor (hash-chain LZ77 with lazy matching, dynamic Huffman blocks).
 
 /// Encodes 8-bit pixel data (rows top-to-bottom, `channels` bytes per pixel) as PNG.
+///
+/// # Panics
+///
+/// If `channels` is not 1 (gray), 2 (gray + alpha), 3 (RGB) or 4 (RGBA), or `pixels` does not
+/// hold exactly `width * height * channels` bytes.
 pub fn encode_png(width: u32, height: u32, channels: usize, pixels: &[u8]) -> Vec<u8> {
     assert!(matches!(channels, 1 | 2 | 3 | 4));
     assert_eq!(pixels.len(), width as usize * height as usize * channels);
@@ -19,7 +24,16 @@ pub fn encode_png(width: u32, height: u32, channels: usize, pixels: &[u8]) -> Ve
     ihdr.extend_from_slice(&height.to_be_bytes());
     ihdr.extend_from_slice(&[8, color_type, 0, 0, 0]);
     chunk(&mut out, *b"IHDR", &ihdr);
-    chunk(&mut out, *b"IDAT", &zlib_compress(&raw));
+    // The image data is compressed straight into its chunk, whose length is filled in after.
+    let len_at = out.len();
+    out.extend_from_slice(&[0; 4]);
+    let start = out.len();
+    out.extend_from_slice(b"IDAT");
+    zlib_compress_into(&raw, &mut out);
+    let len = u32::try_from(out.len() - start - 4).expect("PNG chunks hold at most 4 GiB");
+    out[len_at..start].copy_from_slice(&len.to_be_bytes());
+    let crc = crc32(&out[start..]);
+    out.extend_from_slice(&crc.to_be_bytes());
     chunk(&mut out, *b"IEND", &[]);
     out
 }
@@ -134,6 +148,19 @@ fn crc32(data: &[u8]) -> u32 {
         c = t[0][((c ^ b as u32) & 0xFF) as usize] ^ (c >> 8);
     }
     c ^ 0xFFFF_FFFF
+}
+
+/// The Adler-32 checksum of `a ++ b` from those of `a` and `b` (zlib's `adler32_combine`).
+fn adler32_combine(adler_a: u32, adler_b: u32, len_b: usize) -> u32 {
+    const BASE: u64 = 65521;
+    let rem = len_b as u64 % BASE;
+    let mut sum1 = u64::from(adler_a & 0xffff);
+    let mut sum2 = rem * sum1 % BASE;
+    sum1 += u64::from(adler_b & 0xffff) + BASE - 1;
+    sum2 += u64::from(adler_a >> 16) + u64::from(adler_b >> 16) + BASE - rem;
+    sum1 %= BASE;
+    sum2 %= BASE;
+    ((sum2 << 16) | sum1) as u32
 }
 
 fn adler32(data: &[u8]) -> u32 {
@@ -649,28 +676,38 @@ fn deflate_chunk(data: &[u8], last: bool) -> Vec<u8> {
 /// Large inputs are split into chunks compressed in parallel (each starting with an empty
 /// window, at a negligible cost in size), as pigz does.
 pub fn zlib_compress(data: &[u8]) -> Vec<u8> {
+    let mut out = Vec::new();
+    zlib_compress_into(data, &mut out);
+    out
+}
+
+/// [`zlib_compress`], appending to `out`.
+fn zlib_compress_into(data: &[u8], out: &mut Vec<u8>) {
     const MIN_CHUNK: usize = 1 << 20;
-    let threads = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
-    let k = (data.len() / MIN_CHUNK).clamp(1, threads.max(1));
-    let mut out = vec![0x78, 0x9C];
-    if k == 1 {
+    let k = (data.len() / MIN_CHUNK).clamp(1, crate::batch::available_cores());
+    out.extend_from_slice(&[0x78, 0x9C]);
+    let adler = if k == 1 {
         out.extend_from_slice(&deflate_chunk(data, true));
+        adler32(data)
     } else {
+        // Each thread also checksums its chunk; the checksums combine in order.
         let size = data.len().div_ceil(k);
-        let parts: Vec<Vec<u8>> = std::thread::scope(|sc| {
+        let parts: Vec<(Vec<u8>, u32, usize)> = std::thread::scope(|sc| {
             let hs: Vec<_> = data
                 .chunks(size)
                 .enumerate()
-                .map(|(i, c)| sc.spawn(move || deflate_chunk(c, (i + 1) * size >= data.len())))
+                .map(|(i, c)| sc.spawn(move || (deflate_chunk(c, (i + 1) * size >= data.len()), adler32(c), c.len())))
                 .collect();
             hs.into_iter().map(|h| h.join().unwrap()).collect()
         });
-        for p in &parts {
-            out.extend_from_slice(p);
+        let mut adler = adler32(&[]);
+        for (bytes, a, len) in &parts {
+            out.extend_from_slice(bytes);
+            adler = adler32_combine(adler, *a, *len);
         }
-    }
-    out.extend_from_slice(&adler32(data).to_be_bytes());
-    out
+        adler
+    };
+    out.extend_from_slice(&adler.to_be_bytes());
 }
 
 #[cfg(test)]
@@ -682,6 +719,28 @@ mod tests {
         assert_eq!(crc32(b"123456789"), 0xCBF4_3926);
         assert_eq!(crc32(b"The quick brown fox jumps over the lazy dog"), 0x414F_A339);
         assert_eq!(adler32(b"Wikipedia"), 0x11E6_0398);
+    }
+
+    #[test]
+    fn adler_combines() {
+        let data: Vec<u8> = (0..200_000u32).map(|i| (i * 7919 % 251) as u8).collect();
+        for split in [0, 1, 5552, 65521, 100_000, 199_999, 200_000] {
+            let (a, b) = data.split_at(split);
+            assert_eq!(
+                adler32_combine(adler32(a), adler32(b), b.len()),
+                adler32(&data),
+                "{split}"
+            );
+        }
+    }
+
+    #[test]
+    fn parallel_stream_is_valid() {
+        // Large enough for several chunks; the checksum must still cover all of it.
+        let data: Vec<u8> = (0..5_000_000u32).map(|i| (i % 253) as u8 ^ (i >> 12) as u8).collect();
+        let z = zlib_compress(&data);
+        let tail = u32::from_be_bytes(z[z.len() - 4..].try_into().unwrap());
+        assert_eq!(tail, adler32(&data));
     }
 
     #[test]
