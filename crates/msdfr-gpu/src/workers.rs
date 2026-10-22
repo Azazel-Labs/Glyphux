@@ -56,7 +56,7 @@ struct Shared {
 
 pub(crate) struct Workers {
     shared: Arc<Shared>,
-    threads: usize,
+    threads: Vec<std::thread::JoinHandle<()>>,
 }
 
 /// Normalized, oriented and colored shape, or `None` if there is nothing to draw.
@@ -134,7 +134,7 @@ impl Workers {
         });
         // No threads on wasm32: `finish_preps` runs everything on the calling thread.
         #[cfg_attr(target_arch = "wasm32", allow(unused_mut))]
-        let mut threads = 0;
+        let mut threads = Vec::new();
         #[cfg(not(target_arch = "wasm32"))]
         {
             let n = match config.worker_threads {
@@ -170,8 +170,8 @@ impl Workers {
                             }
                         }
                     });
-                if spawned.is_ok() {
-                    threads += 1;
+                if let Ok(handle) = spawned {
+                    threads.push(handle);
                 }
             }
         }
@@ -222,7 +222,7 @@ impl Workers {
 
     /// Without worker threads: run up to `n` queued probes on the calling thread.
     pub fn run_probes_here(&self, n: usize) {
-        if self.threads > 0 {
+        if !self.threads.is_empty() {
             return;
         }
         for _ in 0..n {
@@ -236,8 +236,17 @@ impl Workers {
 }
 
 impl Drop for Workers {
+    /// Stops the workers: queued work is dropped, a job in progress is finished.
     fn drop(&mut self) {
-        lock(&self.shared.queues).shutdown = true;
+        {
+            let mut q = lock(&self.shared.queues);
+            q.shutdown = true;
+            q.prep.clear();
+            q.probe.clear();
+        }
         self.shared.wake.notify_all();
+        for t in self.threads.drain(..) {
+            let _ = t.join();
+        }
     }
 }
