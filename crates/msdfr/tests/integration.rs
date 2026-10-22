@@ -185,3 +185,21 @@ fn empty_fields() {
         assert_eq!(b.sample(1.0, 1.0), [0.0; 3]);
     }
 }
+
+/// The prepared shape's winding number agrees with the shape's, inside, outside, in holes
+/// and on overlaps.
+#[test]
+fn prepared_winding_number() {
+    let s = Shape::from_description(
+        "{ 0,0; 0,2; 2,2; 2,0; # } { 1,1; 1,3; 3,3; 3,1; # } { 0.5,0.5; 1.5,0.5; 1.5,1.5; 0.5,1.5; # } \
+         { -1,0; (-1,1; 1,1); 1,0; (1,-1; -1,-1); # }",
+    )
+    .unwrap();
+    let ps = PreparedShape::new(&s);
+    for iy in -12..=36 {
+        for ix in -12..=36 {
+            let p = Vec2::new(f64::from(ix) / 8.0 + 0.01, f64::from(iy) / 8.0 + 0.003);
+            assert_eq!(ps.winding_number(p), s.winding_number(p), "{p:?}");
+        }
+    }
+}

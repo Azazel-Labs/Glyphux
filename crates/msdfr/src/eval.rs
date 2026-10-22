@@ -59,6 +59,15 @@ pub(crate) enum GeomData {
 }
 
 impl PEdge {
+    /// The edge's segment (from its control points).
+    fn segment(&self) -> Segment {
+        match self.geom {
+            GeomData::Line(_) => Segment::Linear([self.p[0], self.p[1]]),
+            GeomData::Quad(_) => Segment::Quadratic([self.p[0], self.p[1], self.p[2]]),
+            GeomData::Curve(_) => Segment::Cubic(self.p),
+        }
+    }
+
     /// Like [`Self::signed_distance`], with a per-edge warm-start parameter for curves.
     #[inline(always)]
     pub fn signed_distance_hint(&self, p: Vec2, hint: &mut f64) -> (SignedDistance, f64) {
@@ -208,8 +217,12 @@ impl PreparedShape {
     /// unlike the sign of a distance, which the overlapping contour combiner can get wrong
     /// inside partly overlapping contours.
     pub fn winding_number(&self, p: Vec2) -> i32 {
+        // Only the crossings right of `p` count, in any order (no sort), and only edges whose
+        // bounds straddle the line can cross it.
         let mut crossings = Vec::new();
-        self.scanline(p.y, &mut crossings);
+        for e in self.edges.iter().filter(|e| e.bmin.y <= p.y && p.y <= e.bmax.y) {
+            e.segment().scanline_crossings(p.y, &mut crossings);
+        }
         // Clockwise contours (filled) cross downward on the right of an interior point.
         -crossings.iter().filter(|(x, _)| *x > p.x).map(|(_, d)| *d).sum::<i32>()
     }
@@ -220,12 +233,7 @@ impl PreparedShape {
     pub fn scanline(&self, y: f64, out: &mut Vec<(f64, i32)>) {
         out.clear();
         for e in &self.edges {
-            let segment = match e.geom {
-                GeomData::Line(_) => Segment::Linear([e.p[0], e.p[1]]),
-                GeomData::Quad(_) => Segment::Quadratic([e.p[0], e.p[1], e.p[2]]),
-                GeomData::Curve(_) => Segment::Cubic(e.p),
-            };
-            segment.scanline_crossings(y, out);
+            e.segment().scanline_crossings(y, out);
         }
         out.sort_by(|a, b| a.0.total_cmp(&b.0));
     }
