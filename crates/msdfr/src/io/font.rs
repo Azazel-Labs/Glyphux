@@ -5,6 +5,9 @@ use crate::edge::Edge;
 use crate::math::Vec2;
 use crate::shape::{Contour, Shape};
 
+/// The font parser, for what this module doesn't wrap (names, tables…) through
+/// [`Font::face`]. Its types are part of this crate's API: a new major version of
+/// `ttf-parser` is a breaking change here too.
 pub use ttf_parser;
 
 /// How glyph coordinates are scaled.
@@ -22,8 +25,11 @@ pub enum FontScaling {
 /// Error while loading a font or glyph.
 #[derive(Clone, Debug, PartialEq)]
 pub enum FontError {
+    /// The data is not a font (or not face `index` of a collection).
     Parse(String),
     MissingGlyph,
+    /// A variation axis the font doesn't have.
+    UnknownAxis(String),
 }
 
 impl core::fmt::Display for FontError {
@@ -31,6 +37,7 @@ impl core::fmt::Display for FontError {
         match self {
             FontError::Parse(e) => write!(f, "failed to parse font: {e}"),
             FontError::MissingGlyph => write!(f, "glyph not found in font"),
+            FontError::UnknownAxis(axis) => write!(f, "font has no variation axis '{axis}'"),
         }
     }
 }
@@ -87,8 +94,14 @@ impl<'a> Font<'a> {
             .is_some()
     }
 
+    /// The underlying `ttf-parser` face.
     pub fn face(&self) -> &ttf_parser::Face<'a> {
         &self.face
+    }
+
+    /// Number of glyphs in the font (glyph ids are `0..glyph_count()`).
+    pub fn glyph_count(&self) -> u16 {
+        self.face.number_of_glyphs()
     }
 
     pub fn metrics(&self) -> FontMetrics {

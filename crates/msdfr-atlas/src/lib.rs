@@ -177,7 +177,7 @@ impl FontGeometry {
         let mut font = Font::from_bytes(data, index, FontScaling::EmNormalized)?;
         for (axis, value) in variations {
             if !font.set_variation(axis, *value) {
-                return Err(FontError::Parse(format!("font has no variation axis '{axis}'")));
+                return Err(FontError::UnknownAxis(axis.clone()));
             }
         }
         let k = opts.font_scale;
@@ -204,7 +204,7 @@ impl FontGeometry {
             }
             GlyphSelection::Indices(ids) => wanted.extend(ids.iter().map(|&g| (g, None))),
             GlyphSelection::All => {
-                wanted.extend((0..font.face().number_of_glyphs()).map(|g| (g, None)));
+                wanted.extend((0..font.glyph_count()).map(|g| (g, None)));
             }
         }
         let glyphs: Vec<GlyphGeometry> = par_map(&wanted, 0, |&(gid, cp)| {
