@@ -11,6 +11,7 @@
 *.html   text eol=lf diff=html
 *.cpp    text eol=lf diff=cpp
 *.tsv    text eol=lf
+*.svg    text eol=lf
 
 # Binary assets: never touch line endings, no textual diffs.
 *.png    binary

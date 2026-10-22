@@ -27,5 +27,9 @@ path = "glyph_zoom.rs"
 name = "shaping_demo"
 path = "shaping_demo.rs"
 
+[[bin]]
+name = "figures"
+path = "figures.rs"
+
 [lints]
 workspace = true

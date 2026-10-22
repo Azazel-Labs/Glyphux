@@ -3,20 +3,21 @@
 [![CI](https://github.com/Azazel-Labs/Glyst/actions/workflows/ci.yml/badge.svg)](https://github.com/Azazel-Labs/Glyst/actions/workflows/ci.yml)
 · [Live web demo](https://azazel-labs.github.io/Glyst/) (WebGPU)
 
-A pure Rust generator of signed distance fields for vector shapes and font glyphs —
-true SDF, pseudo-SDF, **multi-channel SDF (MSDF)** and **MSDF + true SDF in alpha (MTSDF)** —
-based on Viktor Chlumský's multi-channel method ([msdfgen](https://github.com/Chlumsky/msdfgen)).
+A pure Rust generator of signed distance fields for vector shapes and font glyphs:
+true SDF, pseudo-SDF, **multi-channel SDF (MSDF)** and **MSDF with the true SDF in alpha (MTSDF)**.
+It is based on Viktor Chlumský's multi-channel method ([msdfgen](https://github.com/Chlumsky/msdfgen)),
+and can also generate the fields on the GPU at run time and draw text with them.
 
-It is a from-scratch reimplementation, not a port: the same selection semantics (so outputs
-match msdfgen bit-for-bit when given the same colored shape), with a faster search, an exact
-cubic distance, more robust preprocessing and no C dependencies.
+It is a from-scratch reimplementation, not a port. It uses the same selection rules, so given
+the same colored shape its output matches msdfgen's bit for bit, but it searches faster,
+computes exact cubic distances, preprocesses outlines more robustly and has no C dependencies.
 
 | Crate | What it is |
 |---|---|
 | [`msdfr`](crates/msdfr) | The library: shapes, edge coloring, SDF/PSDF/MSDF/MTSDF generation, error correction, font/SVG/shape-description input, PNG & co. output. No required dependencies (`ttf-parser` for fonts and `bytemuck` for the `gpu` feature, both optional). No `unsafe`. |
 | [`msdfr-atlas`](crates/msdfr-atlas) | Font atlases on top of `msdfr`, in the role of [msdf-atlas-gen](https://github.com/Chlumsky/msdf-atlas-gen): charsets, glyph boxes, packing, parallel generation, JSON/CSV layouts in msdf-atlas-gen's format. Depends only on `msdfr`. |
 | [`msdfr-cli`](crates/msdfr-cli) | The `msdfr` and `msdfr-atlas` command line tools ([clap](https://crates.io/crates/clap)); also accept msdfgen / msdf-atlas-gen's single-dash options. |
-| [`msdfr-gpu`](crates/msdfr-gpu) | Optional: the same fields generated on the GPU with wgpu 30 compute shaders (native and WebGPU), a glyph atlas that picks the field resolution from the displayed size, and an MSDF text renderer. Separate workspace (the only crate depending on wgpu). |
+| [`msdfr-gpu`](crates/msdfr-gpu) | The same fields generated on the GPU with wgpu 30 compute shaders (native and WebGPU), a glyph atlas that picks each glyph's field resolution from the size it is drawn at, text shaping, and an MSDF text renderer. The only crate that depends on wgpu. |
 
 ```
 cargo install --path crates/msdfr-cli
@@ -25,6 +26,100 @@ msdfr-atlas --font MyFont.ttf --type msdf --size 32 --pxrange 4 --imageout atlas
 # msdfgen / msdf-atlas-gen style works too:
 msdfr msdf -font MyFont.ttf 'A' -o a.png -size 32 32 -pxrange 4 -autoframe
 ```
+
+## How it works
+
+A font stores each letter as an outline: lines and curves. To draw text fast, a GPU wants
+small textures, but a plain bitmap of a letter blurs or turns blocky when it is scaled up.
+A **signed distance field** stores something else in each texel: how far that point is from
+the outline, positive inside and negative outside. When text is drawn, the GPU blends
+between texels, which works smoothly for distances, and draws ink wherever the distance is
+above zero. The edge comes out sharp at any size, and outlines, glows and shadows come free:
+they are just other distance thresholds.
+
+One distance has a weakness: a texel near a sharp corner is equally close to both sides of
+it, so corners come out rounded. The **multi-channel** method stores three distances, to
+different subsets of the edges, in the red, green and blue channels. Drawing takes the
+middle value (the median) of the three, and that reconstructs sharp corners.
+
+Everything below is drawn from the generator's real output by
+[`examples/figures.rs`](examples/figures.rs) (`cargo run --release --bin figures`).
+
+![The pipeline: shape text, look up glyphs, prepare missing glyphs on the CPU, generate them in one GPU batch, store them in the atlas, draw quads](docs/figures/pipeline.svg)
+
+The library runs in three tiers. Every frame, text is shaped into glyphs, and each glyph is
+looked up in the atlas, a texture cache of fields. A glyph that is already there is drawn
+right away. A missing glyph gets its place in the atlas immediately. Its outline is prepared
+on worker threads (steps 3–5), and the GPU generates every glyph missing in that frame in
+one batch (steps 6–8), so new text appears the frame it is first drawn.
+
+### Coloring the edges
+
+![Edge coloring of an R](docs/figures/coloring.svg)
+
+The outline is split at its corners, and each piece gets a color. A color names the channels
+the edge contributes to: yellow edges count for red and green, cyan for green and blue, and
+so on. Two edges that meet at a sharp corner never share all their channels. Near the corner,
+each channel therefore sees only one of the two sides, and the median of the three keeps the
+corner sharp.
+
+### Binning edges into tiles
+
+![The R's field divided into 8×8 texel tiles, each labeled with how many edges it must check](docs/figures/tiles.svg)
+
+Finding the nearest edge for every texel by checking every edge is wasteful: most edges are
+far away. Before the GPU starts, the CPU splits the field into 8×8 texel tiles. For each tile
+it computes an upper bound on the nearest distance, and keeps only the edges that could get
+closer than that bound. The lists are sorted, so the GPU stops scanning as soon as no
+remaining edge can win. The culling is exact: an edge that could be the nearest anywhere in
+the tile is never dropped. Tiles far from the outline only need to know whether they are
+inside or outside.
+
+### The field
+
+![The R's multi-channel field, and each channel alone](docs/figures/field.svg)
+
+The compute shader evaluates the exact distance to each candidate: lines in closed form, and
+curves by solving for the nearest point on the curve, never by cutting them into short
+lines. Each channel on its own is a distorted R with bulging corners. Where two channels
+agree, the median follows the true outline.
+
+![A corner drawn from one channel and from the median of three](docs/figures/median.svg)
+
+Magnified, the difference is plain. A single distance channel rounds the corner off; the
+median of three keeps it square, even from a 32 texels per em field.
+
+### Error correction
+
+![An X with and without error correction](docs/figures/correction.svg)
+
+Where channels cross between two texels, blending can make the median wrong and leave a dent
+or spur in the glyph. Error correction finds those texels, using msdfgen's rules plus exact
+distance checks, and flattens them to their median: they lose the sharp corner but stop
+causing artifacts. On the GPU this is four more passes over the same batch.
+
+### The atlas
+
+![A corner of a GPU atlas layer with glyphs at several sizes](docs/figures/atlas.png)
+
+Generated fields go into a texture array: four 1024 × 1024 layers by default, with the true
+distance in the alpha channel (MTSDF). Each glyph is generated at a resolution chosen from
+the size it is drawn at: 32, 64 or 128 texels per em. Small text gets small fields, large
+text gets detail, and one glyph can be cached at several sizes. When the atlas is full, the
+least recently used layer is cleared and reused. Glyphs with a wide glow or shadow get a
+field with a wider distance range, so effects never clip.
+
+### Shaping
+
+![Characters becoming glyphs: Latin with a contextual arrow, and right-to-left Arabic](docs/figures/shaping.svg)
+
+Characters are not glyphs. [HarfRust](https://github.com/harfbuzz/harfrust), the HarfBuzz
+project's Rust port, turns a line of text into positioned glyphs. It joins letters,
+substitutes ligatures and contextual forms, positions marks and applies kerning. The Unicode
+bidi algorithm first puts right-to-left runs into screen order. Each glyph then becomes one
+textured quad. Its shader takes the median of the three channels and anti-aliases the edge
+in screen space, and it can add weight, outlines, glows and soft shadows from the same
+field.
 
 ## Better / faster / stronger
 
@@ -60,12 +155,12 @@ Where the speed comes from (none of it changes results):
   per interval instead of a basis conversion). No allocation or large stack initialization per
   call; Newton stops once its step is below 1e-9 (the squared distance is stationary there).
 * **Vectorized error correction.** Exact, conservative prefilters run over the whole field as
-  flat, branchless structure-of-arrays loops the compiler vectorizes (build with
-  `-C target-cpu=native` to let it use AVX2 and wider): each texel pair / 2×2 cell is tested once for channel crossings, and the scalar
-  artifact tests only visit the few neighbor directions and channel pairs that pass. Edge
-  protection likewise only looks at pairs near the edge with a channel crossing zero. The
-  exact-distance check only revisits texels the base scan flagged, so msdfgen's default "auto"
-  mode costs almost nothing extra.
+  flat, branchless structure-of-arrays loops that the compiler vectorizes (build with
+  `-C target-cpu=native` to let it use AVX2 and wider). Each texel pair and 2×2 cell is tested
+  once for channel crossings, and the scalar artifact tests only visit the few neighbor
+  directions and channel pairs that pass. Edge protection likewise only looks at pairs near
+  the edge where a channel crosses zero. The exact-distance check only revisits texels the
+  base scan flagged, so msdfgen's default "auto" mode costs almost nothing extra.
 * **Built-in threading** across rows of large outputs and a `par_map` helper for atlases.
 
 **Stronger** — exactness and robustness:
@@ -75,9 +170,10 @@ Where the speed comes from (none of it changes results):
 * *Exact cubic distance.* msdfgen finds the nearest point on a cubic with a few Newton
   iterations from fixed starts, which can miss tight curves. msdfr isolates the roots of the
   distance derivative in Bernstein form (Descartes' rule of signs) with rigorous pruning
-  bounds (checked against brute force by the `cubic_kernel_matches_brute_force` test: 0 misses in 8.6 M queries on
-  the cubic edges of two CFF fonts). On random curvy cubic shapes: msdfgen had 36 / 57 600 texels off by more than
-  0.01 px (worst 1.89 px); msdfr had none (worst 0.0004 px, the ground truth's sampling error).
+  bounds. The `cubic_kernel_matches_brute_force` test checks it against brute force: 0 misses
+  in 8.6 M queries on the cubic edges of two CFF fonts. On random curvy cubic shapes, msdfgen
+  had 36 of 57 600 texels off by more than 0.01 px (worst 1.89 px); msdfr had none (worst
+  0.0004 px, which is the sampling error of the ground truth).
 * *Contour orientation fixing* by fill rule (non-zero / even-odd) before generation, so
   TrueType (clockwise) and PostScript/CFF (counter-clockwise) outlines, SVG paths and hand-made
   shapes all work without relying on per-texel sign repair.
@@ -147,13 +243,14 @@ std::fs::write("atlas.json", layout::to_json(&font, &atlas.layout, &config))?;
 
 ## GPU generation (`msdfr-gpu`)
 
-For apps that generate glyph fields at run time: the CPU bins each glyph's edges into 8×8
-tiles with exact culling bounds, and WGSL compute passes evaluate every texel of all glyphs
-requested in a frame in one batch — msdfr's selection rules, overlapping contour combiner and
-error correction included, matching the CPU output to ~3·10⁻⁶ apart from exact ties.
-`GlyphAtlas` caches glyphs in a texture array at power-of-two levels chosen from the
-displayed size; `TextRenderer` draws them. See [its README](crates/msdfr-gpu/README.md) and
-the [web demo](examples/web-demo).
+For apps that generate glyph fields at run time (see [How it works](#how-it-works)). The
+CPU bins each glyph's edges into 8×8 tiles with exact culling bounds, and WGSL compute passes
+evaluate every texel of all the glyphs requested in a frame in one batch. msdfr's selection
+rules, overlapping contour combiner and error correction are all included, and the output
+matches the CPU's to about 3·10⁻⁶, apart from exact ties. `GlyphAtlas` caches glyphs in a
+texture array at power-of-two levels chosen from the displayed size, and `TextRenderer`
+draws them. See [its README](crates/msdfr-gpu/README.md) and the
+[web demo](examples/web-demo).
 
 ```
 cargo run --release --bin text_demo -- examples/web-demo/assets/Inter-Regular.otf
@@ -214,65 +311,3 @@ Differences from msdfgen's defaults: ink-trap coloring, contour reorientation (`
 to disable) and the "auto" error correction mode even with the scanline pass (msdfgen falls
 back to "auto-fast"); the scanline pass downgrades to "auto-fast" only if it actually had to
 flip signs.
-
-## Tests
-
-`cargo test --release --workspace` runs unit tests (distance functions against brute force, solvers,
-coloring validity, parsers, PNG checksums) and integration tests that render generated fields
-and compare them with an exact rasterization, check thread determinism and verify that the
-culled evaluator matches a brute-force scan; the atlas crate tests the charset parser, packing
-(no overlaps, efficiency), plane/atlas bound consistency, size maximization and rendered tiles.
-`msdfr-gpu` adds GPU vs CPU parity tests and naga validation of every WGSL module it builds.
-
-Slower checks are `#[ignore]`d and run with `cargo test --release --workspace -- --ignored`:
-`fingerprint` hashes the exact output of 54 generator configurations and compares them with
-`crates/msdfr/tests/fingerprint.txt`, so optimizations provably don't change results
-(`MSDFR_BLESS=1` accepts an intended change); `cubic_kernel_matches_brute_force` checks the
-cubic kernel; `whole_font_matches_cpu` compares GPU and CPU fields over a whole font.
-`cargo bench -p msdfr` times every mode. All of them use the committed Inter font unless
-`MSDFR_TEST_FONT` / `MSDFR_BENCH_FONT` names another.
-
-Runnable demos live in [`examples/`](examples) (`cargo run --release --bin <name>`): `glyph`
-(the snippet above), `text_demo`, `shaping_demo`, `glyph_zoom`, and the browser
-[`web-demo`](examples/web-demo).
-
-## Development
-
-**CI** (`.github/workflows/ci.yml`, on pushes to main and pull requests): `cargo fmt --check`,
-clippy with warnings as errors and the release test suite (GPU tests skip themselves without
-an adapter), plus the web demo built for wasm32, bound with wasm-bindgen and optimized with
-`wasm-opt -O3`. On main, once both pass, the demo is deployed to GitHub Pages (repository
-Settings → Pages → Source: *GitHub Actions*).
-
-Rust 2024 edition, latest stable toolchain (`rust-toolchain.toml` pins `stable` with rustfmt,
-clippy and rust-src; the web demo's adds the `wasm32-unknown-unknown` target). Minimum
-versions: 1.85 for the core crates, 1.93 for `msdfr-gpu` (wgpu 30).
-
-* **Formatting**: `rustfmt.toml` (style edition 2024, 120 columns) covers every crate in the folder.
-  `cargo fmt --all` here, plus `cargo fmt` in `examples/web-demo`.
-* **Lints**: `[workspace.lints]` in `Cargo.toml` (the web demo, a separate wasm32-only
-  workspace, carries the same table since it cannot inherit it): clippy `all` + `pedantic` as warnings,
-  with the numeric cast and short-name lints off (geometry code), deliberate hot-path
-  choices allowed (`#[inline(always)]`, branchless `&`/`|` on booleans). `unsafe_code` is
-  forbidden in every crate: GPU records are turned into bytes with `bytemuck` (`derive(Pod)`
-  checks at compile time that a struct has no padding), and SIMD comes from autovectorization
-  instead of runtime-dispatched `target_feature` functions. Both workspaces are
-  clippy-clean.
-* **Line endings**: `.gitattributes` stores and checks out every text file with LF on every
-  OS; `.editorconfig` tells editors the same.
-* **VS Code**: open this folder. `.vscode/settings.json` links the two Cargo workspaces
-  (root and `examples/web-demo`) for rust-analyzer, checks with
-  clippy and formats on save. Tasks (`Terminal → Run Task`): `check: all (clippy)` (default
-  build task), `test: all` (default test task), `test: slow`, `bench`, `fmt: all`,
-  `run: text_demo` and `web demo` (builds, serves and opens the browser demo). `launch.json`
-  has CodeLLDB debug configurations for the glyph example, the CLI, unit tests, `text_demo`
-  and the parity tests; tasks and
-  launches ask for a font path (default: `examples/web-demo/assets/Inter-Regular.otf`,
-  committed under the SIL Open Font License). Recommended extensions are listed in
-  `.vscode/extensions.json`.
-
-## Credits and license
-
-The multi-channel distance field method, the pseudo-distance/perpendicular-distance selection,
-the overlapping contour combiner and the error correction heuristics are by Viktor Chlumský
-(msdfgen, MIT license); the atlas layout format and command line follow his msdf-atlas-gen. This crate is an independent Rust implementation, MIT licensed.

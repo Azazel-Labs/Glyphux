@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 870 462" width="870" height="462" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+<rect width="870" height="462" rx="10" fill="#ffffff"/>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" fill="#6e7781"/></marker></defs>
+<rect x="14.0" y="26.0" width="842.0" height="112" rx="9" fill="#eef6ff"/>
+<text x="28" y="44.0" font-size="13" fill="#24292f" font-weight="600">Every frame, for all text<tspan fill="#6e7781" font-size="12" font-weight="400"> — CPU (shaping, layout) and one draw call</tspan></text>
+<rect x="14.0" y="176.0" width="842.0" height="112" rx="9" fill="#f3f0ff"/>
+<text x="28" y="194.0" font-size="13" fill="#24292f" font-weight="600">Once per new glyph (or new size level)<tspan fill="#6e7781" font-size="12" font-weight="400"> — CPU, on worker threads while the app builds its frame</tspan></text>
+<rect x="14.0" y="326.0" width="842.0" height="112" rx="9" fill="#effaf1"/>
+<text x="28" y="344.0" font-size="13" fill="#24292f" font-weight="600">Once per frame, every new glyph in one batch<tspan fill="#6e7781" font-size="12" font-weight="400"> — GPU compute passes</tspan></text>
+<rect x="28.0" y="62.0" width="178.0" height="62.0" rx="7" fill="#ffffff" stroke="#9cc3f5" stroke-width="1.2"/>
+<text x="117.0" y="89.5" font-size="13" fill="#24292f" text-anchor="middle" font-weight="600">1  Shape</text>
+<text x="117.0" y="105.5" font-size="11.5" fill="#6e7781" text-anchor="middle" font-weight="400">HarfRust + bidi → glyph ids</text>
+<rect x="240.0" y="62.0" width="178.0" height="62.0" rx="7" fill="#ffffff" stroke="#9cc3f5" stroke-width="1.2"/>
+<text x="329.0" y="89.5" font-size="13" fill="#24292f" text-anchor="middle" font-weight="600">2  Look up glyphs</text>
+<text x="329.0" y="105.5" font-size="11.5" fill="#6e7781" text-anchor="middle" font-weight="400">atlas key: font, glyph, level</text>
+<rect x="664.0" y="62.0" width="178.0" height="62.0" rx="7" fill="#ffffff" stroke="#9cc3f5" stroke-width="1.2"/>
+<text x="753.0" y="89.5" font-size="13" fill="#24292f" text-anchor="middle" font-weight="600">9  Draw quads</text>
+<text x="753.0" y="105.5" font-size="11.5" fill="#6e7781" text-anchor="middle" font-weight="400">median, AA, outline, glow</text>
+<rect x="28.0" y="212.0" width="178.0" height="62.0" rx="7" fill="#ffffff" stroke="#b7a8ec" stroke-width="1.2"/>
+<text x="117.0" y="239.5" font-size="13" fill="#24292f" text-anchor="middle" font-weight="600">3  Load outline</text>
+<text x="117.0" y="255.5" font-size="11.5" fill="#6e7781" text-anchor="middle" font-weight="400">lines, quadratics, cubics</text>
+<rect x="240.0" y="212.0" width="178.0" height="62.0" rx="7" fill="#ffffff" stroke="#b7a8ec" stroke-width="1.2"/>
+<text x="329.0" y="239.5" font-size="13" fill="#24292f" text-anchor="middle" font-weight="600">4  Color edges</text>
+<text x="329.0" y="255.5" font-size="11.5" fill="#6e7781" text-anchor="middle" font-weight="400">corners change channels</text>
+<rect x="452.0" y="212.0" width="178.0" height="62.0" rx="7" fill="#ffffff" stroke="#b7a8ec" stroke-width="1.2"/>
+<text x="541.0" y="239.5" font-size="13" fill="#24292f" text-anchor="middle" font-weight="600">5  Bin into 8×8 tiles</text>
+<text x="541.0" y="255.5" font-size="11.5" fill="#6e7781" text-anchor="middle" font-weight="400">exact candidate lists</text>
+<rect x="28.0" y="362.0" width="178.0" height="62.0" rx="7" fill="#ffffff" stroke="#98d4a6" stroke-width="1.2"/>
+<text x="117.0" y="389.5" font-size="13" fill="#24292f" text-anchor="middle" font-weight="600">6  Distance pass</text>
+<text x="117.0" y="405.5" font-size="11.5" fill="#6e7781" text-anchor="middle" font-weight="400">nearest edge per channel</text>
+<rect x="240.0" y="362.0" width="178.0" height="62.0" rx="7" fill="#ffffff" stroke="#98d4a6" stroke-width="1.2"/>
+<text x="329.0" y="389.5" font-size="13" fill="#24292f" text-anchor="middle" font-weight="600">7  Error correction</text>
+<text x="329.0" y="405.5" font-size="11.5" fill="#6e7781" text-anchor="middle" font-weight="400">4 passes, msdfgen's rules</text>
+<rect x="452.0" y="362.0" width="178.0" height="62.0" rx="7" fill="#ffffff" stroke="#98d4a6" stroke-width="1.2"/>
+<text x="541.0" y="389.5" font-size="13" fill="#24292f" text-anchor="middle" font-weight="600">8  Store in atlas</text>
+<text x="541.0" y="405.5" font-size="11.5" fill="#6e7781" text-anchor="middle" font-weight="400">texture array, LRU layers</text>
+<rect x="664.0" y="362.0" width="178.0" height="62.0" rx="7" fill="#fff7e6" stroke="#f0b45a" stroke-width="1.2"/>
+<text x="753.0" y="389.5" font-size="13" fill="#24292f" text-anchor="middle" font-weight="600">Glyph atlas</text>
+<text x="753.0" y="405.5" font-size="11.5" fill="#6e7781" text-anchor="middle" font-weight="400">4 × 1024² MTSDF layers</text>
+<path d="M206.0,93.0H237.0" stroke="#6e7781" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+<path d="M206.0,243.0H237.0" stroke="#6e7781" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+<path d="M418.0,243.0H449.0" stroke="#6e7781" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+<path d="M206.0,393.0H237.0" stroke="#6e7781" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+<path d="M418.0,393.0H449.0" stroke="#6e7781" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+<path d="M630.0,393.0H661.0" stroke="#6e7781" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+<path d="M452.0,93.0H661.0" stroke="#6e7781" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+<text x="458.0" y="85.0" font-size="11.5" fill="#6e7781" text-anchor="start" font-weight="400">cached: draw right away</text>
+<path d="M329.0,124.0V157.0H117.0V209.0" stroke="#e8590c" stroke-width="1.6" fill="none" marker-end="url(#arrow)" stroke-dasharray="5 4"/>
+<text x="337.0" y="153.0" font-size="11.5" fill="#e8590c" text-anchor="start" font-weight="400">missing: placed now, generated this frame</text>
+<path d="M541.0,274.0V307.0H117.0V359.0" stroke="#6e7781" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+<path d="M753.0,362.0V127.0" stroke="#f0b45a" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+<text x="761.0" y="216.0" font-size="11.5" fill="#c98a1c" text-anchor="start" font-weight="400">sampled</text>
+</svg>

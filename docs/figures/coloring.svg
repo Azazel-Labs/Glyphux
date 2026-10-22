@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 549 474" width="549" height="474" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+<rect width="549" height="474" rx="10" fill="#ffffff"/>
+<text x="20.0" y="30.0" font-size="15" fill="#24292f" text-anchor="start" font-weight="600">Edge coloring</text>
+<text x="20.0" y="48.0" font-size="12" fill="#6e7781" text-anchor="start" font-weight="400">Inter 'R', 32 texels per em; each edge feeds two of the three channels</text>
+<path d="M20.00,62.00V452.00M33.00,62.00V452.00M46.00,62.00V452.00M59.00,62.00V452.00M72.00,62.00V452.00M85.00,62.00V452.00M98.00,62.00V452.00M111.00,62.00V452.00M124.00,62.00V452.00M137.00,62.00V452.00M150.00,62.00V452.00M163.00,62.00V452.00M176.00,62.00V452.00M189.00,62.00V452.00M202.00,62.00V452.00M215.00,62.00V452.00M228.00,62.00V452.00M241.00,62.00V452.00M254.00,62.00V452.00M267.00,62.00V452.00M280.00,62.00V452.00M293.00,62.00V452.00M306.00,62.00V452.00M319.00,62.00V452.00M20.00,62.00H319.00M20.00,75.00H319.00M20.00,88.00H319.00M20.00,101.00H319.00M20.00,114.00H319.00M20.00,127.00H319.00M20.00,140.00H319.00M20.00,153.00H319.00M20.00,166.00H319.00M20.00,179.00H319.00M20.00,192.00H319.00M20.00,205.00H319.00M20.00,218.00H319.00M20.00,231.00H319.00M20.00,244.00H319.00M20.00,257.00H319.00M20.00,270.00H319.00M20.00,283.00H319.00M20.00,296.00H319.00M20.00,309.00H319.00M20.00,322.00H319.00M20.00,335.00H319.00M20.00,348.00H319.00M20.00,361.00H319.00M20.00,374.00H319.00M20.00,387.00H319.00M20.00,400.00H319.00M20.00,413.00H319.00M20.00,426.00H319.00M20.00,439.00H319.00M20.00,452.00H319.00" stroke="#e4e7eb" stroke-width="1" fill="none"/>
+<path d="M59.00,413.00L59.00,110.34" stroke="#c2389b" stroke-width="3.2" fill="none" stroke-linecap="round"/>
+<path d="M59.00,110.34L162.59,110.34" stroke="#e0a800" stroke-width="3.2" fill="none" stroke-linecap="round"/>
+<path d="M162.59,110.34C233.28,110.34 265.78,149.75 265.78,203.78" stroke="#e0a800" stroke-width="3.2" fill="none" stroke-linecap="round"/>
+<path d="M265.78,203.78C265.78,244.00 247.91,275.08 209.72,288.48" stroke="#e0a800" stroke-width="3.2" fill="none" stroke-linecap="round"/>
+<path d="M209.72,288.48L277.56,413.00" stroke="#1798a8" stroke-width="3.2" fill="none" stroke-linecap="round"/>
+<path d="M277.56,413.00L232.88,413.00" stroke="#e0a800" stroke-width="3.2" fill="none" stroke-linecap="round"/>
+<path d="M232.88,413.00L169.91,295.39" stroke="#c2389b" stroke-width="3.2" fill="none" stroke-linecap="round"/>
+<path d="M169.91,295.39C167.47,295.59 165.23,295.59 162.80,295.59" stroke="#1798a8" stroke-width="3.2" fill="none" stroke-linecap="round"/>
+<path d="M162.80,295.59L97.59,295.59" stroke="#1798a8" stroke-width="3.2" fill="none" stroke-linecap="round"/>
+<path d="M97.59,295.59L97.59,413.00" stroke="#e0a800" stroke-width="3.2" fill="none" stroke-linecap="round"/>
+<path d="M97.59,413.00L59.00,413.00" stroke="#1798a8" stroke-width="3.2" fill="none" stroke-linecap="round"/>
+<path d="M97.59,261.27L160.97,261.27" stroke="#1798a8" stroke-width="3.2" fill="none" stroke-linecap="round"/>
+<path d="M160.97,261.27C208.70,261.27 227.39,239.33 227.39,203.78" stroke="#1798a8" stroke-width="3.2" fill="none" stroke-linecap="round"/>
+<path d="M227.39,203.78C227.39,167.83 208.70,144.27 160.56,144.27" stroke="#1798a8" stroke-width="3.2" fill="none" stroke-linecap="round"/>
+<path d="M160.56,144.27L97.59,144.27" stroke="#1798a8" stroke-width="3.2" fill="none" stroke-linecap="round"/>
+<path d="M97.59,144.27L97.59,261.27" stroke="#c2389b" stroke-width="3.2" fill="none" stroke-linecap="round"/>
+<circle cx="59.00" cy="413.00" r="3.6" fill="#24292f"/>
+<circle cx="59.00" cy="110.34" r="3.6" fill="#24292f"/>
+<circle cx="209.72" cy="288.48" r="3.6" fill="#24292f"/>
+<circle cx="277.56" cy="413.00" r="3.6" fill="#24292f"/>
+<circle cx="232.88" cy="413.00" r="3.6" fill="#24292f"/>
+<circle cx="169.91" cy="295.39" r="3.6" fill="#24292f"/>
+<circle cx="97.59" cy="295.59" r="3.6" fill="#24292f"/>
+<circle cx="97.59" cy="413.00" r="3.6" fill="#24292f"/>
+<circle cx="97.59" cy="261.27" r="3.6" fill="#24292f"/>
+<circle cx="97.59" cy="144.27" r="3.6" fill="#24292f"/>
+<path d="M347.0,80.0h22" stroke="#e0a800" stroke-width="4" stroke-linecap="round"/>
+<text x="377.0" y="84.0" font-size="12" fill="#6e7781" text-anchor="start" font-weight="400">yellow (red + green)</text>
+<path d="M347.0,104.0h22" stroke="#c2389b" stroke-width="4" stroke-linecap="round"/>
+<text x="377.0" y="108.0" font-size="12" fill="#6e7781" text-anchor="start" font-weight="400">magenta (red + blue)</text>
+<path d="M347.0,128.0h22" stroke="#1798a8" stroke-width="4" stroke-linecap="round"/>
+<text x="377.0" y="132.0" font-size="12" fill="#6e7781" text-anchor="start" font-weight="400">cyan (green + blue)</text>
+<circle cx="358.0" cy="152.0" r="3.6" fill="#24292f"/>
+<text x="377.0" y="156.0" font-size="12" fill="#6e7781" text-anchor="start" font-weight="400">color changes: a corner</text>
+<text x="377.0" y="172.0" font-size="12" fill="#6e7781" text-anchor="start" font-weight="400">that stays sharp</text>
+</svg>

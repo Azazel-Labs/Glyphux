@@ -18,9 +18,10 @@ on the GPU the first time it is needed at a size level; nothing is pre-baked.
 * The atlas pages themselves, live, as raw MSDF fields: watch them fill up as new text and
   sizes appear (toggle in the panel).
 
-Wide glows and long shadows get their glyphs generated with a wider distance range (`GlyphAtlas::get_with_reach`),
-so they never clip. Each line is split into runs by font: the chosen font where it has the
-characters, the bundled fallbacks elsewhere (mixed Latin / CJK / Arabic lines work).
+Wide glows and long shadows get their glyphs generated with a wider distance range
+(`GlyphAtlas::get_with_reach`), so they never clip. Each line is split into runs by font:
+the chosen font where it has the characters, and the bundled fallbacks elsewhere, so mixed
+Latin, CJK and Arabic lines work.
 
 The panel sets the text and the font: the bundled ones, any installed font (Chrome / Edge,
 through the Local Font Access API, after you allow it) or a font file (any browser).
@@ -52,4 +53,5 @@ cannot run the generator (no compute shaders).
 
 * `src/lib.rs` — canvas, adapter/device, surface (sRGB view), `requestAnimationFrame` loop.
 * `index.html` — keeps the canvas at CSS size × `devicePixelRatio`, loads `pkg/`.
-* `assets/` — the embedded font (Inter, SIL OFL; see `assets/README.md`).
+* `assets/` — the fonts: Inter (embedded in the wasm), its variable version and the Noto Sans
+  fallbacks (loaded by `index.html`), all under the SIL OFL; see `assets/README.md`.

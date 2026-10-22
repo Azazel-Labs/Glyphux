@@ -14,21 +14,19 @@ f32 breaks the tie the other way — at most a few dozen of ~600 000 values, see
 
 ## How it works
 
-```
-CPU (msdfr)                          GPU (one batch = all glyphs requested this frame)
-───────────                          ──────────────────────────────────────────────────
-shape → normalize → orient → color   fine pass       one 8×8 workgroup per tile of each glyph;
-PreparedShape → GpuShape (edges,                     per texel: nearest edge per channel from the
-  contours, cubic interval data)                     tile's sorted candidates (early exit), corner
-bin_tiles: per 8×8 tile and contour,                 perpendiculars, pseudo-distance, overlapping
-  exact upper bounds of the nearest                  contour combiner (≤ 64 contours)
-  distance per channel + every edge  narrow band     far tiles: one invocation finds the sign,
-  that can beat them, sorted by a                    the rest of the tile is filled (optional)
-  lower bound                        EC: corners → protect → find (+ exact distance checks
-corner texels, EC parameters             at edges) → apply  (msdfgen's error correction)
-                                     atlas store     field → texture array layer, clamped
-                                     text            instanced quads, median + screen-space AA
-```
+The workspace [README](../../README.md#how-it-works) walks through the pipeline with figures
+drawn from real output. In short:
+
+![The pipeline](../../docs/figures/pipeline.svg)
+
+| Where | Step |
+|---|---|
+| CPU, once per glyph | Shape → normalize → orient → color edges; `PreparedShape` → `GpuShape` (edges, contours, cubic interval data); `bin_tiles`: for each 8×8 tile and contour, exact upper bounds of the nearest distance per channel and every edge that can beat them, sorted by a lower bound; corner texels and error correction parameters. |
+| GPU fine pass | One 8×8 workgroup per tile of each glyph. Per texel: the nearest edge per channel from the tile's sorted candidates (with early exit), corner perpendiculars, pseudo-distance, and the overlapping contour combiner (up to 64 contours). |
+| GPU narrow band | Far tiles only get their sign (from the exact winding number); the rest of the tile is filled in. |
+| GPU error correction | Protect corners → protect edges → find artifacts (with exact distance checks at edges) → apply: msdfgen's error correction. |
+| GPU atlas store | Field → texture array layer, clamped. |
+| Render | Instanced quads, median and screen-space anti-aliasing. |
 
 * **Exact tile culling.** For each tile the CPU computes, per channel, an upper bound of the
   nearest distance over the tile (from edge end and mid points) and keeps only edges whose
@@ -46,14 +44,15 @@ corner texels, EC parameters             at edges) → apply  (msdfgen's error c
   workgroup size 64; the field passes and the error correction passes bind different subsets
   of one shader module.
 
-Compared to the projects reviewed for the design: like
-[msdfgl](https://github.com/nyyManni/msdfgl) the work is per texel on the GPU with the shape
-in buffers, but with real nearest-edge selection (msdfgl scans all segments, has no error
-correction or overlap handling and works only at a fixed size); like the
-[quadratic stroke SDF](https://github.com/tuzhong007/quadratic-stroke-sdf) paper (and Vello),
-work is binned into tiles so each tile sees a short candidate list and far tiles are only
-signed; unlike both, the result is bit-compatible with the CPU generator, error correction
-included.
+Compared to the projects reviewed for the design:
+
+* Like [msdfgl](https://github.com/nyyManni/msdfgl), the work is per texel on the GPU with
+  the shape in buffers, but with real nearest-edge selection. msdfgl scans every segment, has
+  no error correction or overlap handling, and works at one fixed size.
+* Like the [quadratic stroke SDF](https://github.com/tuzhong007/quadratic-stroke-sdf) paper
+  (and Vello), work is binned into tiles, so each tile sees a short candidate list and far
+  tiles only get a sign.
+* Unlike both, the result matches the CPU generator, error correction included.
 
 ## Usage
 
@@ -92,11 +91,12 @@ queue.submit([encoder.finish()]);
   carries the device scale (and the root size for `rem`), so layout happens in logical pixels
   and looks the same on any display; `TextStyle` (size, color, weight, outline, glow, shadow)
   resolves to physical pixels once per target, including the reach to request glyphs with.
-* **Levels.** A glyph shown at *s* px/em uses the field level `next_pow2(s / magnification)`
-  clamped to `[min_level, max_level]` texels per em (defaults 2×, 32..128; at 16 texels/em or
-  4× magnification, sub-texel notches such as the crotch of r, n, m smear into visible
-  blobs): small text gets
-  small fields, large text gets resolution, and the same glyph can be cached at several levels.
+* **Levels.** A glyph shown at *s* px/em uses the field level `next_pow2(s / magnification)`,
+  clamped to `[min_level, max_level]` texels per em (defaults: 2×, 32 to 128). Small text gets
+  small fields, large text gets resolution, and the same glyph can be cached at several
+  levels. The defaults are no lower because at 16 texels per em, or 4× magnification,
+  notches thinner than a texel (where the arch of r, n and m meets the stem) smear into
+  visible blobs.
 * **Detail probe.** Some glyphs need more than their display size suggests: Devanagari
   hairlines break up at low levels. A CPU test renders a small MSDF of each new glyph at 2×
   and compares it with the exact coverage; the lowest level with at most 5 % of the ink wrong
@@ -123,8 +123,8 @@ queue.submit([encoder.finish()]);
   disagrees with the exact winding number (`AtlasConfig::sign_correction`, non-zero by
   default; `FieldJob::sign_correction` for raw generation). Narrow-band tiles take their sign
   from the exact winding number too, so one wrong texel can never fill a whole tile.
-* **Range tiers.** Outlines, glows and shadows can only reach half the field's distance range outside
-  the glyph. `GlyphAtlas::get_with_reach(key, px_per_em, reach_px, || shape)` generates the
+* **Range tiers.** Outlines, glows and shadows can only reach half the field's distance
+  range outside the glyph. `GlyphAtlas::get_with_reach(key, px_per_em, reach_px, || shape)` generates the
   glyph with the range doubled as often as needed (up to `px_range << max_range_tier`, default
   8×) for effects reaching `reach_px` screen pixels at that size, and reuses a glyph already
   cached with a wider range. Each `AtlasGlyph` records its `px_range`, and the shader reads it
@@ -147,8 +147,10 @@ msdfr's loader, so the shaper's glyph ids index the atlas directly.
 * `Shaper::shape_line(&font, text) -> ShapedLine` (glyph ids, clusters, positions in em, in
   visual order); `text::layout_shaped` places one; `text::layout_text` does several `\n`
   separated lines with start/end/center alignment (start = right for RTL paragraphs).
-* Not covered: line wrapping and font fallback (use [parley](https://github.com/linebender/parley)
-  or cosmic-text for paragraphs and feed their glyph runs to `GlyphAtlas::get`).
+* Not covered: line wrapping and font fallback. For paragraphs, use
+  [parley](https://github.com/linebender/parley) or cosmic-text and feed their glyph runs to
+  `GlyphAtlas::get`. (The demo scene does simple per-character fallback with
+  `ShapingFont::has_glyph`.)
 
 Checked against HarfBuzz 8.3 (glyph ids, clusters, advances and offsets), all 11 test lines
 matched exactly — Latin ligatures with and without `liga`, kerning,
@@ -221,10 +223,14 @@ results to `generator.upload(&device, &queue, &prepared)`. The generator keeps
 
 `tests/parity.rs` generates a few shapes on both sides on every test run, and with `--ignored`
 every printable ASCII glyph (+ a few Latin-1 ones) of a font, reporting per-value differences
-and differences of the median (the rendered value). Both skip when there is no adapter. Every WGSL module the crate builds (all template
-variants, exactly as passed to wgpu) is parsed and validated by naga in the unit tests, so
-shader errors fail `cargo test` with naga's diagnostics, no GPU needed. Results on Mesa llvmpipe (GL backend), ~100 glyphs
-per font; "values" counts channel values differing by more than 10⁻³:
+and differences of the median (the rendered value). Both skip when there is no adapter.
+
+Every WGSL module the crate builds (all template variants, exactly as passed to wgpu) is
+parsed and validated by naga in the unit tests, so shader errors fail `cargo test` with
+naga's diagnostics, no GPU needed.
+
+Results on Mesa llvmpipe (GL backend), about 100 glyphs per font; "values" counts channel
+values differing by more than 10⁻³:
 
 | Font | Size / range | SDF, PSDF max diff | MSDF EC off: values / medians | MSDF EC auto: values / medians / EC decisions |
 |---|---|---:|---:|---:|
@@ -256,14 +262,16 @@ llvmpipe a batch of ~100 glyphs at 32 px takes about as long as one CPU core.
 ## Demos
 
 * `cargo run --release --bin text_demo -- Font.otf 1280 720 out 3` (from the repository root)
-  renders the demo scene headless to PNGs (and dumps the atlas layer).
+  renders the demo scene headless to PNGs and dumps the first atlas layer.
 * [`examples/web-demo`](../../examples/web-demo) runs the same scene in the browser on
-  WebGPU: the title, a size ladder, an outlined line breathing through the atlas levels and a
-  huge glyph. Build steps in its README.
+  WebGPU: animated glowing titles, a size ladder in many scripts, text on a spline, drop
+  shadows, variable-font weights and an optional live view of the atlas. Build steps are in
+  its README.
 
 ## Limitations
 
-* The in-shader overlap combiner handles up to 64 contours per glyph; glyphs with more are
-  generated without overlap support (fine unless their contours overlap).
-* Shaping covers lines, not paragraphs: no line wrapping or font fallback (see above).
+* The in-shader overlap combiner handles up to 64 contours per glyph. Glyphs with more are
+  generated without overlap support, which is fine unless their contours overlap.
+* Shaping covers lines, not paragraphs: there is no line wrapping or font fallback (see
+  above).
 * WebGL 2 is not supported (no compute shaders); WebGPU only on the web.
