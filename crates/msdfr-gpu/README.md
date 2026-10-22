@@ -185,6 +185,8 @@ rasterizer here.
 
 ```rust
 let mut prof = msdfr_gpu::GpuProfiler::new(&device, &queue, 8);   // None without timestamps
+// every frame:
+if let Some(p) = prof.as_mut() { p.begin_frame(); }
 atlas.flush_profiled(&device, &mut encoder, prof.as_mut());         // distance, correction, store
 let scope = prof.as_mut().and_then(|p| p.scope("text"));           // your own passes too
 // ... begin_render_pass with timestamp_writes: scope.map(|s| prof.as_ref().unwrap().render_writes(s))

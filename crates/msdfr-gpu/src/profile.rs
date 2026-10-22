@@ -6,7 +6,12 @@
 //! (`device.poll(wgpu::PollType::Poll)`) for readbacks to complete; browsers do it on their own.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicU8, Ordering};
+
+/// States of a readback.
+const PENDING: u8 = 0;
+const MAPPED: u8 = 1;
+const FAILED: u8 = 2;
 
 /// Collects begin/end timestamps of labelled passes within a frame.
 pub struct GpuProfiler {
@@ -16,7 +21,7 @@ pub struct GpuProfiler {
     labels: Vec<&'static str>,
     period_ns: f64,
     free: Vec<wgpu::Buffer>,
-    in_flight: Vec<(wgpu::Buffer, Vec<&'static str>, Arc<AtomicBool>)>,
+    in_flight: Vec<(wgpu::Buffer, Vec<&'static str>, Arc<AtomicU8>)>,
     last: Vec<(&'static str, f64)>,
 }
 
@@ -48,6 +53,13 @@ impl GpuProfiler {
             in_flight: Vec::new(),
             last: Vec::new(),
         })
+    }
+
+    /// Starts a frame: scopes reserved since the last [`Self::resolve`] are dropped. Only
+    /// needed when a frame may reserve scopes without resolving them (scopes otherwise pile
+    /// up until [`Self::scope`] runs out of room).
+    pub fn begin_frame(&mut self) {
+        self.labels.clear();
     }
 
     /// Reserves the timestamps of one pass; `None` when the frame's room is used up.
@@ -101,13 +113,11 @@ impl GpuProfiler {
 
     /// Starts reading back a resolved frame once its commands are submitted.
     pub fn submitted(&mut self, readback: Readback) {
-        let done = Arc::new(AtomicBool::new(false));
+        let done = Arc::new(AtomicU8::new(PENDING));
         let flag = done.clone();
         let size = readback.labels.len() as u64 * 16;
         readback.buffer.slice(..size).map_async(wgpu::MapMode::Read, move |r| {
-            if r.is_ok() {
-                flag.store(true, Ordering::Release);
-            }
+            flag.store(if r.is_ok() { MAPPED } else { FAILED }, Ordering::Release);
         });
         self.in_flight.push((readback.buffer, readback.labels, done));
     }
@@ -116,9 +126,18 @@ impl GpuProfiler {
     pub fn latest(&mut self) -> &[(&'static str, f64)] {
         let mut i = 0;
         while i < self.in_flight.len() {
-            if !self.in_flight[i].2.load(Ordering::Acquire) {
-                i += 1;
-                continue;
+            match self.in_flight[i].2.load(Ordering::Acquire) {
+                PENDING => {
+                    i += 1;
+                    continue;
+                }
+                // A failed mapping (e.g. a lost device) never completes: drop it rather than
+                // keep it forever.
+                FAILED => {
+                    self.in_flight.remove(i);
+                    continue;
+                }
+                _ => {}
             }
             let (buffer, labels, _) = self.in_flight.remove(i);
             {

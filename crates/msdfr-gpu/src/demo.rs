@@ -793,6 +793,7 @@ impl Scene {
         #[cfg(not(target_arch = "wasm32"))]
         let start = std::time::Instant::now();
         if let Some(p) = &mut self.profiler {
+            p.begin_frame();
             let latest = p.latest();
             if !latest.is_empty() {
                 if latest.iter().any(|(l, _)| l.starts_with("msdfr d")) {
