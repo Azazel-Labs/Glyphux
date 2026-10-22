@@ -9,7 +9,8 @@
 //! results may arrive in later frames. Without threads (`wasm32`), everything runs in `flush`.
 
 use std::collections::VecDeque;
-use std::sync::{Arc, Condvar, Mutex};
+use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 
 use msdfr::gpu::GpuShape;
 use msdfr::{PreparedShape, Shape, Transform};
@@ -72,9 +73,24 @@ pub(crate) fn prepare_shape(mut shape: Shape, cfg: &AtlasConfig) -> Option<Shape
     Some(shape)
 }
 
+/// Locks `m`, ignoring poisoning: every critical section here leaves the data consistent, and
+/// a panicking job must not take the atlas down with it.
+fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Prepares `job` and reports it as done, also when preparing it panics (the glyph is then
+/// treated as empty): [`Workers::finish_preps`] waits for every job's result.
 fn run_prep(job: PrepJob, shared: &Shared) {
+    let id = job.id;
+    let out = catch_unwind(AssertUnwindSafe(|| prepare(job, shared))).unwrap_or(None);
+    lock(&shared.done).push(Done::Prep(id, out));
+    shared.done_wake.notify_all();
+}
+
+fn prepare(job: PrepJob, shared: &Shared) -> Option<Box<PreparedJob>> {
     let cfg = &shared.config;
-    let out = prepare_shape(job.shape, cfg).map(|shape| {
+    prepare_shape(job.shape, cfg).map(|shape| {
         let prepared = PreparedShape::new(&shape);
         let gpu = GpuShape::new(&prepared);
         let field_job = FieldJob {
@@ -92,19 +108,19 @@ fn run_prep(job: PrepJob, shared: &Shared) {
         };
         let result = prepare_job_owned(&field_job, gpu.clone());
         if let Some(key) = job.probe {
-            shared.queues.lock().unwrap().probe.push_back((key, shape));
+            lock(&shared.queues).probe.push_back((key, shape));
             shared.wake.notify_one();
         }
         Box::new(result)
-    });
-    shared.done.lock().unwrap().push(Done::Prep(job.id, out));
-    shared.done_wake.notify_all();
+    })
 }
 
+/// Probes a glyph's detail; a probe that panics is dropped (the glyph keeps its size level).
 fn run_probe(key: GlyphKey, shape: &Shape, shared: &Shared) {
-    let level = probe_detail(shape, &shared.config);
-    shared.done.lock().unwrap().push(Done::Probe(key, level));
-    shared.done_wake.notify_all();
+    if let Ok(level) = catch_unwind(AssertUnwindSafe(|| probe_detail(shape, &shared.config))) {
+        lock(&shared.done).push(Done::Probe(key, level));
+        shared.done_wake.notify_all();
+    }
 }
 
 impl Workers {
@@ -134,7 +150,7 @@ impl Workers {
                     .spawn(move || {
                         loop {
                             let job = {
-                                let mut q = s.queues.lock().unwrap();
+                                let mut q = lock(&s.queues);
                                 loop {
                                     if q.shutdown {
                                         return;
@@ -145,7 +161,7 @@ impl Workers {
                                     if let Some(p) = q.probe.pop_front() {
                                         break Err(p);
                                     }
-                                    q = s.wake.wait(q).unwrap();
+                                    q = s.wake.wait(q).unwrap_or_else(std::sync::PoisonError::into_inner);
                                 }
                             };
                             match job {
@@ -163,13 +179,13 @@ impl Workers {
     }
 
     pub fn submit(&self, job: PrepJob) {
-        self.shared.queues.lock().unwrap().prep.push_back(job);
+        lock(&self.shared.queues).prep.push_back(job);
         self.shared.wake.notify_one();
     }
 
     /// Results so far (preparations and probes).
     pub fn take_done(&self) -> Vec<Done> {
-        std::mem::take(&mut *self.shared.done.lock().unwrap())
+        std::mem::take(&mut *lock(&self.shared.done))
     }
 
     /// Runs queued preparations on the calling thread until none is left to start, then
@@ -179,13 +195,13 @@ impl Workers {
         let mut out = Vec::new();
         loop {
             // Help with jobs nobody has picked up yet.
-            let job = self.shared.queues.lock().unwrap().prep.pop_front();
+            let job = lock(&self.shared.queues).prep.pop_front();
             match job {
                 Some(j) => run_prep(j, &self.shared),
                 None => break,
             }
         }
-        let mut done = self.shared.done.lock().unwrap();
+        let mut done = lock(&self.shared.done);
         loop {
             for d in done.drain(..) {
                 if matches!(d, Done::Prep(..)) {
@@ -196,7 +212,11 @@ impl Workers {
             if outstanding == 0 {
                 return out;
             }
-            done = self.shared.done_wake.wait(done).unwrap();
+            done = self
+                .shared
+                .done_wake
+                .wait(done)
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
         }
     }
 
@@ -206,7 +226,7 @@ impl Workers {
             return;
         }
         for _ in 0..n {
-            let p = self.shared.queues.lock().unwrap().probe.pop_front();
+            let p = lock(&self.shared.queues).probe.pop_front();
             match p {
                 Some((key, shape)) => run_probe(key, &shape, &self.shared),
                 None => break,
@@ -217,7 +237,7 @@ impl Workers {
 
 impl Drop for Workers {
     fn drop(&mut self) {
-        self.shared.queues.lock().unwrap().shutdown = true;
+        lock(&self.shared.queues).shutdown = true;
         self.shared.wake.notify_all();
     }
 }
