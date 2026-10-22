@@ -73,7 +73,7 @@ fn main() {
         scene.render(&device, &queue, &view, [w, h], t);
         device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
         let ms = start.elapsed().as_secs_f64() * 1e3;
-        let px = read_texture(&device, &queue, &target, w, h, 0);
+        let px = msdfr_gpu::read_texture_layer(&device, &queue, &target, 0);
         let path = format!("{prefix}_{f}.png");
         std::fs::write(&path, msdfr::io::png::encode_png(w, h, 4, &px)).unwrap();
         let st = scene.atlas.stats();
@@ -95,7 +95,7 @@ fn main() {
         );
     }
     let size = scene.atlas.config().size;
-    let px = read_texture(&device, &queue, scene.atlas.texture(), size, size, 0);
+    let px = msdfr_gpu::read_texture_layer(&device, &queue, scene.atlas.texture(), 0);
     // Show the atlas' MSDF channels (alpha = true distance, made opaque).
     let rgb: Vec<u8> = px
         .as_chunks::<4>()
@@ -108,53 +108,4 @@ fn main() {
         msdfr::io::png::encode_png(size, size, 4, &rgb),
     )
     .unwrap();
-}
-
-fn read_texture(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    tex: &wgpu::Texture,
-    w: u32,
-    h: u32,
-    layer: u32,
-) -> Vec<u8> {
-    let row = (w * 4).next_multiple_of(256);
-    let buf = device.create_buffer(&wgpu::BufferDescriptor {
-        label: None,
-        size: (row * h) as u64,
-        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-        mapped_at_creation: false,
-    });
-    let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
-    enc.copy_texture_to_buffer(
-        wgpu::TexelCopyTextureInfo {
-            texture: tex,
-            mip_level: 0,
-            origin: wgpu::Origin3d { x: 0, y: 0, z: layer },
-            aspect: wgpu::TextureAspect::All,
-        },
-        wgpu::TexelCopyBufferInfo {
-            buffer: &buf,
-            layout: wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(row),
-                rows_per_image: Some(h),
-            },
-        },
-        wgpu::Extent3d {
-            width: w,
-            height: h,
-            depth_or_array_layers: 1,
-        },
-    );
-    queue.submit([enc.finish()]);
-    buf.slice(..).map_async(wgpu::MapMode::Read, |_| {});
-    device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
-    let data = buf.slice(..).get_mapped_range().unwrap();
-    let mut out = Vec::with_capacity((w * h * 4) as usize);
-    for y in 0..h {
-        let o = (y * row) as usize;
-        out.extend_from_slice(&data[o..o + (w * 4) as usize]);
-    }
-    out
 }

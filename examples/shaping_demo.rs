@@ -183,46 +183,7 @@ fn main() {
         renderer.render(&mut pass);
     }
     queue.submit([enc.finish()]);
-    let px = read_rgba(&device, &queue, &target, w, h);
+    let px = msdfr_gpu::read_texture_layer(&device, &queue, &target, 0);
     std::fs::write(&out_path, msdfr::io::png::encode_png(w, h, 4, &px)).unwrap();
     println!("wrote {out_path}");
-}
-
-fn read_rgba(device: &wgpu::Device, queue: &wgpu::Queue, tex: &wgpu::Texture, w: u32, h: u32) -> Vec<u8> {
-    let row = (w * 4).next_multiple_of(256);
-    let buf = device.create_buffer(&wgpu::BufferDescriptor {
-        label: None,
-        size: (row * h) as u64,
-        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-        mapped_at_creation: false,
-    });
-    let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
-    enc.copy_texture_to_buffer(
-        wgpu::TexelCopyTextureInfo {
-            texture: tex,
-            mip_level: 0,
-            origin: wgpu::Origin3d::ZERO,
-            aspect: wgpu::TextureAspect::All,
-        },
-        wgpu::TexelCopyBufferInfo {
-            buffer: &buf,
-            layout: wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(row),
-                rows_per_image: Some(h),
-            },
-        },
-        wgpu::Extent3d {
-            width: w,
-            height: h,
-            depth_or_array_layers: 1,
-        },
-    );
-    queue.submit([enc.finish()]);
-    buf.slice(..).map_async(wgpu::MapMode::Read, |_| {});
-    device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
-    let data = buf.slice(..).get_mapped_range().unwrap();
-    (0..h)
-        .flat_map(|y| data[(y * row) as usize..(y * row + w * 4) as usize].to_vec())
-        .collect()
 }

@@ -779,6 +779,54 @@ pub fn read_stencil(device: &wgpu::Device, queue: &wgpu::Queue, batch: &FieldBat
     }
 }
 
+/// Copies layer `layer` of `texture` back (native, blocking): rows top to bottom, tightly
+/// packed, in the texture's own format (RGBA8: 4 bytes per texel). For tests, screenshots and
+/// debugging views of the atlas or of a render target.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn read_texture_layer(device: &wgpu::Device, queue: &wgpu::Queue, texture: &wgpu::Texture, layer: u32) -> Vec<u8> {
+    let (w, h) = (texture.width(), texture.height());
+    let texel = texture.format().block_copy_size(None).expect("a color format");
+    let row = (w * texel).next_multiple_of(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT);
+    let staging = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("msdfr readback"),
+        size: u64::from(row) * u64::from(h),
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+    enc.copy_texture_to_buffer(
+        wgpu::TexelCopyTextureInfo {
+            texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d { x: 0, y: 0, z: layer },
+            aspect: wgpu::TextureAspect::All,
+        },
+        wgpu::TexelCopyBufferInfo {
+            buffer: &staging,
+            layout: wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(row),
+                rows_per_image: Some(h),
+            },
+        },
+        wgpu::Extent3d {
+            width: w,
+            height: h,
+            depth_or_array_layers: 1,
+        },
+    );
+    queue.submit([enc.finish()]);
+    let slice = staging.slice(..);
+    slice.map_async(wgpu::MapMode::Read, |_| {});
+    device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
+    let data = slice.get_mapped_range().unwrap();
+    let tight = (w * texel) as usize;
+    let out = data.chunks(row as usize).flat_map(|r| &r[..tight]).copied().collect();
+    drop(data);
+    staging.unmap();
+    out
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 fn read_buffer(device: &wgpu::Device, queue: &wgpu::Queue, buffer: &wgpu::Buffer) -> Vec<u32> {
     let size = buffer.size();

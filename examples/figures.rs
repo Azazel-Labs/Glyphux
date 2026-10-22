@@ -13,7 +13,7 @@ use msdfr::{
     PreparedShape, Projection, Range, Segment, Shape, Transform, Vec2, edge_coloring, generate_msdf, generate_sdf,
     median,
 };
-use msdfr_gpu::{AtlasConfig, GlyphAtlas, GlyphKey, Shaper, ShapingFont, default_device, wgpu};
+use msdfr_gpu::{AtlasConfig, GlyphAtlas, GlyphKey, Shaper, ShapingFont, default_device, read_texture_layer, wgpu};
 
 const ASSETS: &str = "examples/web-demo/assets";
 const OUTLINE: &str = "#e8590c";
@@ -1071,7 +1071,7 @@ fn atlas(inter: &[u8]) -> Result<Vec<u8>, String> {
     atlas.flush(&device, &mut enc);
     queue.submit([enc.finish()]);
     let size = atlas.config().size;
-    let px = read_layer(&device, &queue, atlas.texture(), size);
+    let px = read_texture_layer(&device, &queue, atlas.texture(), 0);
     // Crop to the filled part.
     let (mut w, mut h) = (0, 0);
     for y in 0..size {
@@ -1087,41 +1087,4 @@ fn atlas(inter: &[u8]) -> Result<Vec<u8>, String> {
         .flat_map(|i| [px[i], px[i + 1], px[i + 2]])
         .collect();
     Ok(encode_png(w, h, 3, &rgb))
-}
-
-fn read_layer(device: &wgpu::Device, queue: &wgpu::Queue, tex: &wgpu::Texture, size: u32) -> Vec<u8> {
-    let row = (size * 4).next_multiple_of(256);
-    let buf = device.create_buffer(&wgpu::BufferDescriptor {
-        label: None,
-        size: u64::from(row * size),
-        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-        mapped_at_creation: false,
-    });
-    let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
-    enc.copy_texture_to_buffer(
-        tex.as_image_copy(),
-        wgpu::TexelCopyBufferInfo {
-            buffer: &buf,
-            layout: wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(row),
-                rows_per_image: Some(size),
-            },
-        },
-        wgpu::Extent3d {
-            width: size,
-            height: size,
-            depth_or_array_layers: 1,
-        },
-    );
-    queue.submit([enc.finish()]);
-    buf.slice(..).map_async(wgpu::MapMode::Read, |_| {});
-    device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
-    let data = buf.slice(..).get_mapped_range().unwrap();
-    (0..size)
-        .flat_map(|y| {
-            let o = (y * row) as usize;
-            data[o..o + (size * 4) as usize].to_vec()
-        })
-        .collect()
 }

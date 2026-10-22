@@ -72,7 +72,7 @@ fn several_flushes_per_submit() {
             }
         }
         queue.submit([enc.finish()]);
-        read_layer(&device, &queue, &atlas)
+        msdfr_gpu::read_texture_layer(&device, &queue, atlas.texture(), 0)
     };
     let separate = render(false);
     assert!(separate.iter().any(|&b| b != 0), "nothing was generated");
@@ -80,38 +80,6 @@ fn several_flushes_per_submit() {
         render(true) == separate,
         "batches recorded into one submit overwrote each other"
     );
-}
-
-fn read_layer(device: &wgpu::Device, queue: &wgpu::Queue, atlas: &GlyphAtlas) -> Vec<u8> {
-    let size = atlas.config().size;
-    let row = (size * 4).next_multiple_of(256);
-    let buf = device.create_buffer(&wgpu::BufferDescriptor {
-        label: None,
-        size: u64::from(row * size),
-        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-        mapped_at_creation: false,
-    });
-    let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
-    enc.copy_texture_to_buffer(
-        atlas.texture().as_image_copy(),
-        wgpu::TexelCopyBufferInfo {
-            buffer: &buf,
-            layout: wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(row),
-                rows_per_image: Some(size),
-            },
-        },
-        wgpu::Extent3d {
-            width: size,
-            height: size,
-            depth_or_array_layers: 1,
-        },
-    );
-    queue.submit([enc.finish()]);
-    buf.slice(..).map_async(wgpu::MapMode::Read, |_| {});
-    device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
-    buf.slice(..).get_mapped_range().unwrap().to_vec()
 }
 
 /// Absurd display sizes pick the top or bottom level instead of overflowing.

@@ -18,7 +18,7 @@ mod workers;
 pub use atlas::{AtlasConfig, AtlasConfigError, AtlasGlyph, AtlasStats, GlyphAtlas, GlyphKey};
 pub use field::{FieldBatch, FieldGenerator, FieldJob, FieldLayout, PreparedJob, TILE, prepare_job, shader_source};
 #[cfg(not(target_arch = "wasm32"))]
-pub use field::{read_field, read_stencil};
+pub use field::{read_field, read_stencil, read_texture_layer};
 pub use msdfr;
 pub use msdfr::gpu::{FieldKind, GpuShape};
 pub use profile::GpuProfiler;
