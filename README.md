@@ -50,8 +50,8 @@ Everything below is drawn from the generator's real output by
 The library runs in three tiers. Every frame, text is shaped into glyphs, and each glyph is
 looked up in the atlas, a texture cache of fields. A glyph that is already there is drawn
 right away. A missing glyph gets its place in the atlas immediately. Its outline is prepared
-on worker threads (steps 3–5), and the GPU generates every glyph missing in that frame in
-one batch (steps 6–8), so new text appears the frame it is first drawn.
+on worker threads (steps 3 to 5), and the GPU generates every glyph missing in that frame in
+one batch (steps 6 to 8), so new text appears the frame it is first drawn.
 
 ### Coloring the edges
 
@@ -169,7 +169,7 @@ field.
 
 ## Better / faster / stronger
 
-**Faster:** 3.2–3.9× faster than msdfgen 1.13 single-threaded for MSDF/MTSDF, more with threads:
+**Faster:** 3.2 to 3.9× faster than msdfgen 1.13 single-threaded for MSDF/MTSDF, more with threads:
 
 | Workload (94 printable ASCII glyphs, error correction on) | msdfgen | msdfr | speedup |
 |---|---:|---:|---:|
@@ -190,7 +190,7 @@ msdfr side: `cargo bench -p msdfr`.</sub>
 Where the speed comes from (none of it changes results):
 * **Exact culling.** Each 8×8 tile computes provable upper bounds of the nearest distance per
   channel and drops edges that can't beat them; per texel, edges are rejected by bounding-box
-  and corner-extension lower bounds against the current best. Only ~1–3 edges per texel get a
+  and corner-extension lower bounds against the current best. Only about 1 to 3 edges per texel get a
   full distance evaluation (msdfgen evaluates every edge).
 * **Spatial coherence.** The nearest edges of the previous texel are evaluated first so the
   bounds are tight immediately; texels are visited in serpentine order. Curve kernels start
@@ -246,7 +246,7 @@ Where the speed comes from (none of it changes results):
   `<polygon>`, nested `<g>` transforms, `fill-rule`, `display:none` / `fill="none"`, and the
   union of all shapes (msdfgen without Skia uses only the last path).
 * Built-in PNG output with its own deflate (lazy-matching LZ77, dynamic Huffman blocks,
-  parallel chunks for large images), giving atlases 25–30% smaller than
+  parallel chunks for large images), giving atlases 25 to 30% smaller than
   msdf-atlas-gen's, plus BMP, FL32, RGBA, raw and text output.
 * `msdfgen`-compatible text shape descriptions (read and write) and command line.
 

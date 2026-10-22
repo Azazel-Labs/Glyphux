@@ -1677,7 +1677,7 @@ fn batch_passes() -> String {
         MUTED,
         "start",
         400,
-        "Two bind groups per batch, distance (0–7) and error correction (0–4, 7–9): at most 8 storage buffers each, as WebGPU allows.",
+        "Two bind groups per batch, distance (0 to 7) and error correction (0 to 4, 7 to 9): at most 8 storage buffers each, as WebGPU allows.",
     );
     svg.text(
         x0,

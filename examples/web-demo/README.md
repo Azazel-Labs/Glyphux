@@ -9,7 +9,7 @@ on the GPU the first time it is needed at a size level; nothing is pre-baked.
   breathing from Thin to Black through Inter's variable font (instances at nine weights, the
   shader's weight offset blending between them).
 * A subtitle that decodes from scrambled glyphs into the next tagline.
-* A size ladder (7–36 px) cycling through Latin, Japanese, Chinese, Korean, Cyrillic and Greek.
+* A size ladder (7 to 36 px) cycling through Latin, Japanese, Chinese, Korean, Cyrillic and Greek.
 * A big glyph (&, 永, 鬱, 龍, 한, ß, ॐ, ع) casting a soft drop shadow from a circling light,
   inside a spinning ring of text.
 * Your text flowing along an animated cubic spline, each glyph glowing in its own hue.

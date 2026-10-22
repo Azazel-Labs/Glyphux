@@ -174,9 +174,9 @@ requested in a frame is generated in that frame; nothing arrives a frame late ex
 detail probe's occasional upgrade. On `wasm32` (no threads) the same work runs inside `flush`.
 
 Measured on a 2-core sandbox (one worker, software GL), 92 new ASCII glyphs at 120 px: `get`
-4–5 µs per glyph; `flush` 0.7–1.4 ms in steady state when the app does ~8 ms of other work
+4 to 5 µs per glyph; `flush` 0.7 to 1.4 ms in steady state when the app does ~8 ms of other work
 between layout and flush (the wait for workers is ~0.02 ms; the rest is buffer writes), or
-3–7 ms when it flushes right after layout and the preparation has had no time to overlap.
+3 to 7 ms when it flushes right after layout and the preparation has had no time to overlap.
 Shaping is about 3 µs per character. Glyphs already in the cache cost nothing but their quad.
 The GPU side has to be measured on real hardware; it is only exercised on a software
 rasterizer here.
@@ -254,7 +254,7 @@ middle column is exactly on it), where f64 and f32 pick different, equally valid
 that changes one channel and not the median; on a symmetry axis it can change two. Error
 correction uses an explicit tolerance for the analogous tie (which texel of an equidistant
 pair is blamed), without which symmetric glyphs differed on dozens of texels. The "always
-check" distance mode differs on 6–12 more texels per font (exact-distance comparisons of
+check" distance mode differs on 6 to 12 more texels per font (exact-distance comparisons of
 borderline candidates).
 
 The narrow band (`band = range/2 + 2` texels, on by default in the atlas) changes only
