@@ -324,38 +324,89 @@ pub fn edge_coloring_by_distance(shape: &mut Shape, angle_threshold: f64, seed: 
             });
         }
     }
-    // Pairwise spline distances (minimum over samples).
+    // Distance between two splines: the minimum over their samples (squared). Computing it
+    // for every pair is quadratic in samples and splines, so pairs are visited nearest first
+    // by a lower bound (the distance between the samples' bounding boxes) and the searches
+    // below stop once the bound shows no further pair can matter; the results are exact.
+    // Small shapes (single glyphs) are faster with the plain all-pairs table.
     let ns = splines.len();
-    let mut dist = vec![f64::MAX; ns * ns];
-    for i in 0..ns {
-        for j in i + 1..ns {
-            let mut d = f64::MAX;
-            for a in &splines[i].pts {
-                for b in &splines[j].pts {
-                    d = d.min((*a - *b).length_squared());
-                }
+    let pruned = ns > 48;
+    let exact = |i: usize, j: usize| -> f64 {
+        let mut d = f64::MAX;
+        for a in &splines[i].pts {
+            for b in &splines[j].pts {
+                d = d.min((*a - *b).length_squared());
             }
-            dist[i * ns + j] = d;
-            dist[j * ns + i] = d;
+        }
+        d
+    };
+    let mut table = Vec::new();
+    if !pruned {
+        table = vec![f64::MAX; ns * ns];
+        for i in 0..ns {
+            for j in i + 1..ns {
+                let d = exact(i, j);
+                table[i * ns + j] = d;
+                table[j * ns + i] = d;
+            }
         }
     }
+    let dist = |i: usize, j: usize| if pruned { exact(i, j) } else { table[i * ns + j] };
+    let boxes: Vec<(Vec2, Vec2)> = splines
+        .iter()
+        .map(|s| {
+            s.pts
+                .iter()
+                .fold((s.pts[0], s.pts[0]), |(lo, hi), &p| (lo.min(p), hi.max(p)))
+        })
+        .collect();
+    // The other splines by the lower bound of their distance to `i`, nearest first (all with
+    // bound 0 when not pruning).
+    let by_bound = |i: usize, out: &mut Vec<(f64, usize)>| {
+        out.clear();
+        if !pruned {
+            out.extend((0..ns).filter(|&j| j != i).map(|j| (0.0, j)));
+            return;
+        }
+        let (lo, hi) = boxes[i];
+        out.extend((0..ns).filter(|&j| j != i).map(|j| {
+            let (blo, bhi) = boxes[j];
+            let dx = (blo.x - hi.x).max(lo.x - bhi.x).max(0.0);
+            let dy = (blo.y - hi.y).max(lo.y - bhi.y).max(0.0);
+            (dx * dx + dy * dy, j)
+        }));
+        out.sort_by(|a, b| a.0.total_cmp(&b.0));
+    };
+    let mut near: Vec<(f64, usize)> = Vec::with_capacity(ns);
     // Greedy: color splines in order of how constrained they are; choose the palette color
     // that is allowed (differs from already-colored corner neighbors) and maximizes the
     // minimum distance to splines of the same color.
     let mut assigned: Vec<Option<usize>> = vec![None; ns];
     let mut order: Vec<usize> = (0..ns).collect();
-    // Start with splines that have many nearby splines.
-    let crowd = |i: usize| -> f64 {
-        let mut v: Vec<f64> = (0..ns).filter(|&j| j != i).map(|j| dist[i * ns + j]).collect();
-        v.sort_by(f64::total_cmp);
-        v.iter().take(4).sum::<f64>()
-    };
-    let crowd_vals: Vec<f64> = (0..ns).map(crowd).collect();
+    // Start with splines that have many nearby splines: the sum of the 4 smallest distances.
+    let mut crowd_vals = Vec::with_capacity(ns);
+    for i in 0..ns {
+        by_bound(i, &mut near);
+        let mut smallest: Vec<f64> = Vec::with_capacity(5);
+        for &(bound, j) in &near {
+            if smallest.len() == 4 && bound >= smallest[3] {
+                break;
+            }
+            let d = dist(i, j);
+            let at = smallest.partition_point(|&s| s <= d);
+            if at < 4 {
+                smallest.insert(at, d);
+                smallest.truncate(4);
+            }
+        }
+        crowd_vals.push(smallest.iter().sum::<f64>());
+    }
     order.sort_by(|&a, &b| crowd_vals[a].total_cmp(&crowd_vals[b]));
     for &i in &order {
         let mut best = None;
         let mut best_score = -1.0;
         let offset = (rng.next() % 3) as usize;
+        by_bound(i, &mut near);
         for k in 0..3 {
             let col = (k + offset) % 3;
             let p = splines[i].prev;
@@ -365,9 +416,12 @@ pub fn edge_coloring_by_distance(shape: &mut Shape, angle_threshold: f64, seed: 
             }
             // For a two-spline contour prev == next; also forbid equal colors in that case.
             let mut score = f64::MAX;
-            for j in 0..ns {
-                if j != i && assigned[j] == Some(col) {
-                    score = score.min(dist[i * ns + j]);
+            for &(bound, j) in &near {
+                if bound >= score {
+                    break;
+                }
+                if assigned[j] == Some(col) {
+                    score = score.min(dist(i, j));
                 }
             }
             if score > best_score {
