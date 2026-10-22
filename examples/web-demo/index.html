@@ -45,16 +45,27 @@
     <div id="note"></div>
   </div>
   <script type="module">
-    // Keep the canvas backing store at its CSS size times the device pixel ratio; the demo
-    // follows it every frame.
+    // Keep the canvas backing store at its size in device pixels; the demo follows it every
+    // frame (and takes its scale from it). Where the browser reports the exact device-pixel
+    // size it is used; otherwise the CSS size times the device pixel ratio, refitted also
+    // when the ratio changes without a resize (moving the window to another display).
     const canvas = document.getElementById("msdfr");
-    const fit = () => {
+    const fit = (entry) => {
+      const box = entry?.devicePixelContentBoxSize?.[0];
       const r = window.devicePixelRatio || 1;
-      canvas.width = Math.max(1, Math.round(canvas.clientWidth * r));
-      canvas.height = Math.max(1, Math.round(canvas.clientHeight * r));
+      canvas.width = Math.max(1, box ? box.inlineSize : Math.round(canvas.clientWidth * r));
+      canvas.height = Math.max(1, box ? box.blockSize : Math.round(canvas.clientHeight * r));
     };
     fit();
-    new ResizeObserver(fit).observe(canvas);
+    const resized = new ResizeObserver((entries) => fit(entries[0]));
+    try {
+      resized.observe(canvas, { box: "device-pixel-content-box" });
+    } catch {
+      resized.observe(canvas);
+    }
+    const watchRatio = () => matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`)
+      .addEventListener("change", () => { fit(); watchRatio(); }, { once: true });
+    watchRatio();
     if (!navigator.gpu) {
       document.getElementById("status").textContent = "This demo needs WebGPU (Chrome/Edge 113+, Safari 26+, Firefox 141+ on Windows).";
     } else {

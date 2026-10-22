@@ -244,10 +244,9 @@ fn frame(s: &mut State, now: f64) {
         ..Default::default()
     });
     let t = ((now - s.start) / 1000.0) as f32;
-    // Lay out in CSS pixels: the same scene on any display.
-    if let Some(w) = web_sys::window() {
-        s.scene.set_scale(w.device_pixel_ratio() as f32);
-    }
+    // Lay out in CSS pixels: the same scene on any display. The scale comes from the backing
+    // store itself, so it always agrees with the size being rendered.
+    s.scene.set_scale(w as f32 / s.canvas.client_width().max(1) as f32);
     s.scene.render(&s.device, &s.queue, &view, [w, h], t);
     s.queue.present(tex);
 }
