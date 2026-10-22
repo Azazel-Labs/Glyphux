@@ -212,7 +212,12 @@ impl<'a> Lexer<'a> {
             }
         }
         self.i = i;
-        std::str::from_utf8(&s[start..i]).ok()?.parse().ok()
+        // Overflowing exponents ("1e999") parse as infinity: not a coordinate.
+        std::str::from_utf8(&s[start..i])
+            .ok()?
+            .parse()
+            .ok()
+            .filter(|v: &f64| v.is_finite())
     }
     /// Arc flags may be written without separators ("a1 1 0 011 1").
     fn flag(&mut self) -> Option<bool> {
@@ -928,6 +933,12 @@ mod tests {
         assert_eq!((b.left, b.bottom, b.right, b.top), (10.0, 10.0, 30.0, 20.0));
         // Evenodd hole must be oriented opposite to its outer contour.
         assert_eq!(s.shape.contours[1].winding(), -s.shape.contours[2].winding());
+    }
+
+    #[test]
+    fn non_finite_numbers_are_errors() {
+        assert!(parse_path_data("M0 0L1e999 0L0 1z").is_err());
+        assert!(parse_transform("translate(1e400)").is_err());
     }
 
     #[test]

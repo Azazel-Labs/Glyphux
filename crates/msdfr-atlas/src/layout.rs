@@ -6,6 +6,10 @@ use crate::{AtlasConfig, AtlasLayout, BoundsRect, FontGeometry, RangeSpec, YOrig
 
 /// Formats a number compactly (shortest round-trip representation, no trailing `.0`).
 fn num(v: f64) -> String {
+    // JSON has no infinity or NaN.
+    if !v.is_finite() {
+        return "null".into();
+    }
     if v == 0.0 {
         return "0".into();
     }
@@ -149,4 +153,16 @@ pub fn to_csv(font: &FontGeometry, layout: &AtlasLayout, y_origin: YOrigin) -> S
         );
     }
     s
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn json_numbers() {
+        assert_eq!(super::num(0.0), "0");
+        assert_eq!(super::num(-3.0), "-3");
+        assert_eq!(super::num(0.25), "0.25");
+        assert_eq!(super::num(f64::INFINITY), "null");
+        assert_eq!(super::num(f64::NAN), "null");
+    }
 }

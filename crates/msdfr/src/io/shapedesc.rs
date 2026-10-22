@@ -51,15 +51,12 @@ fn parse_point(s: &str, pos: usize) -> Result<Vec2, ParseError> {
     let (Some(x), Some(y), None) = (parts.next(), parts.next(), parts.next()) else {
         return err(format!("expected a point 'x, y', found '{}'", s.trim()), pos);
     };
-    let px = x
-        .trim()
-        .parse::<f64>()
-        .or_else(|_| err(format!("invalid number '{}'", x.trim()), pos))?;
-    let py = y
-        .trim()
-        .parse::<f64>()
-        .or_else(|_| err(format!("invalid number '{}'", y.trim()), pos))?;
-    Ok(Vec2::new(px, py))
+    // Only finite numbers: Rust also parses "inf", "NaN" and overflowing exponents.
+    let number = |s: &str| match s.trim().parse::<f64>() {
+        Ok(v) if v.is_finite() => Ok(v),
+        _ => err(format!("invalid number '{}'", s.trim()), pos),
+    };
+    Ok(Vec2::new(number(x)?, number(y)?))
 }
 
 fn color_of(c: char) -> Option<EdgeColor> {
@@ -304,6 +301,17 @@ fn parse_contour(s: &str, base: usize) -> Result<Contour, ParseError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn non_finite_numbers_are_errors() {
+        for t in [
+            "{ 0,0; inf,0; 0,1; # }",
+            "{ 0,0; 1e999,0; 0,1; # }",
+            "{ NaN,0; 1,0; 0,1; # }",
+        ] {
+            assert!(Shape::from_description(t).is_err(), "{t}");
+        }
+    }
 
     #[test]
     fn non_ascii_is_an_error() {
