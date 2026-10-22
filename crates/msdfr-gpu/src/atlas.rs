@@ -207,6 +207,7 @@ impl Layer {
 /// A glyph waiting for generation (its CPU preparation runs on the workers).
 struct Pending {
     id: u64,
+    ck: CacheKey,
 }
 
 /// Cached distance fields of glyphs in a texture array.
@@ -507,7 +508,7 @@ impl GlyphAtlas {
             px_range,
             probe,
         });
-        self.pending.push(Pending { id });
+        self.pending.push(Pending { id, ck });
         self.pending_texels += width * height;
         self.entries.insert(
             ck,
@@ -521,6 +522,20 @@ impl GlyphAtlas {
         l.glyphs.push(ck);
         l.last_used = self.frame;
         Some(glyph)
+    }
+
+    /// Turns a queued glyph into a blank one (its rectangle stays allocated until its layer
+    /// is recycled).
+    fn make_blank(&mut self, ck: CacheKey) {
+        if let Some(v) = self.levels.get_mut(&ck.key) {
+            v.retain(|&v| v != (ck.level, ck.tier));
+            if v.is_empty() {
+                self.levels.remove(&ck.key);
+            }
+        }
+        if self.entries.contains_key(&ck) {
+            self.insert_blank(ck);
+        }
     }
 
     fn insert_blank(&mut self, ck: CacheKey) -> AtlasGlyph {
@@ -623,16 +638,24 @@ impl GlyphAtlas {
         let outstanding = pending.iter().filter(|p| !self.ready.contains_key(&p.id)).count();
         let done = self.workers.finish_preps(outstanding);
         self.route(done);
-        let jobs: Vec<crate::field::PreparedJob> = pending
-            .iter()
-            .filter_map(|p| self.ready.remove(&p.id).flatten().map(|j| *j))
-            .collect();
+        let mut jobs: Vec<crate::field::PreparedJob> = Vec::with_capacity(pending.len());
+        for p in &pending {
+            match self.ready.remove(&p.id).flatten() {
+                Some(job) => jobs.push(*job),
+                // Nothing to draw after all (e.g. only degenerate edges), or the preparation
+                // failed: the glyph's rectangle would show whatever the atlas held there.
+                None => self.make_blank(p.ck),
+            }
+        }
+        if jobs.is_empty() {
+            return 0;
+        }
         let batch = self.generator.upload(device, encoder, &jobs);
         self.generator.encode_profiled(encoder, &batch, profiler.as_deref_mut());
         self.encode_store(device, encoder, &batch, profiler);
-        self.stats.generated += pending.len() as u64;
+        self.stats.generated += jobs.len() as u64;
         self.stats.generated_texels += batch.texels as u64;
-        pending.len()
+        jobs.len()
     }
 
     fn encode_store(
