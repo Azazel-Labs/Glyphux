@@ -84,20 +84,20 @@ fn compare(
             (0 | 1, _) => {
                 let mut b = Bitmap::<1>::new(size, size);
                 if kind.channels == 0 {
-                    generate_sdf_prepared(&mut b, ps, s, x, &cfg);
+                    generate_sdf_prepared(&mut b, ps, x, &cfg);
                 } else {
-                    generate_psdf_prepared(&mut b, ps, s, x, &cfg);
+                    generate_psdf_prepared(&mut b, ps, x, &cfg);
                 }
                 (b.data().to_vec(), 1)
             }
             (_, false) => {
                 let mut b = Bitmap::<3>::new(size, size);
-                generate_msdf_prepared(&mut b, ps, s, x, &cfg);
+                generate_msdf_prepared(&mut b, ps, x, &cfg);
                 (b.data().to_vec(), 3)
             }
             _ => {
                 let mut b = Bitmap::<4>::new(size, size);
-                generate_mtsdf_prepared(&mut b, ps, s, x, &cfg);
+                generate_mtsdf_prepared(&mut b, ps, x, &cfg);
                 (b.data().to_vec(), 4)
             }
         };

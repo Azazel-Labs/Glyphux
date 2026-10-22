@@ -460,9 +460,9 @@ fn run(cli: &Cli) {
         Mode::Sdf | Mode::Psdf => {
             let mut bmp = Bitmap::<1>::new(width, height);
             if cli.mode == Mode::Sdf {
-                generate_sdf_prepared(&mut bmp, &ps, &shape, &transform, &config);
+                generate_sdf_prepared(&mut bmp, &ps, &transform, &config);
             } else {
-                generate_psdf_prepared(&mut bmp, &ps, &shape, &transform, &config);
+                generate_psdf_prepared(&mut bmp, &ps, &transform, &config);
             }
             t_gen = Instant::now();
             write(save(&bmp, &cli.output, format));
@@ -474,7 +474,7 @@ fn run(cli: &Cli) {
         }
         Mode::Msdf => {
             let mut bmp = Bitmap::<3>::new(width, height);
-            generate_msdf_prepared(&mut bmp, &ps, &shape, &transform, &config);
+            generate_msdf_prepared(&mut bmp, &ps, &transform, &config);
             t_gen = Instant::now();
             write(save(&bmp, &cli.output, format));
             if let Some((f, w, h)) = renders(false) {
@@ -486,7 +486,7 @@ fn run(cli: &Cli) {
         }
         Mode::Mtsdf => {
             let mut bmp = Bitmap::<4>::new(width, height);
-            generate_mtsdf_prepared(&mut bmp, &ps, &shape, &transform, &config);
+            generate_mtsdf_prepared(&mut bmp, &ps, &transform, &config);
             t_gen = Instant::now();
             write(save(&bmp, &cli.output, format));
             if let Some((f, w, h)) = renders(false) {

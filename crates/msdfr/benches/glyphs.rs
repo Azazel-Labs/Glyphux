@@ -59,26 +59,26 @@ fn main() {
     let prepared: Vec<PreparedShape> = shapes.iter().map(PreparedShape::new).collect();
     let cfg = GeneratorConfig::default().with_threads(1);
     let run_one = |mode: &str, i: usize| -> f32 {
-        let (s, ps, x) = (&shapes[i], &prepared[i], &xfs[i]);
+        let (ps, x) = (&prepared[i], &xfs[i]);
         match mode {
             "msdf" => {
                 let mut b = Bitmap::<3>::new(size, size);
-                generate_msdf_prepared(&mut b, ps, s, x, &cfg);
+                generate_msdf_prepared(&mut b, ps, x, &cfg);
                 b.pixel(size / 2, size / 2)[0]
             }
             "mtsdf" => {
                 let mut b = Bitmap::<4>::new(size, size);
-                generate_mtsdf_prepared(&mut b, ps, s, x, &cfg);
+                generate_mtsdf_prepared(&mut b, ps, x, &cfg);
                 b.pixel(size / 2, size / 2)[0]
             }
             "sdf" => {
                 let mut b = Bitmap::<1>::new(size, size);
-                generate_sdf_prepared(&mut b, ps, s, x, &cfg);
+                generate_sdf_prepared(&mut b, ps, x, &cfg);
                 b.pixel(size / 2, size / 2)[0]
             }
             _ => {
                 let mut b = Bitmap::<1>::new(size, size);
-                generate_psdf_prepared(&mut b, ps, s, x, &cfg);
+                generate_psdf_prepared(&mut b, ps, x, &cfg);
                 b.pixel(size / 2, size / 2)[0]
             }
         }

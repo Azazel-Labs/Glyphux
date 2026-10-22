@@ -193,89 +193,78 @@ fn run<const N: usize, const NC: usize, const TD: bool>(
 
 /// Generates a conventional (true) signed distance field.
 pub fn generate_sdf(out: &mut Bitmap<1>, shape: &Shape, transform: &Transform, config: &GeneratorConfig) {
-    let ps = PreparedShape::new(shape);
-    generate_sdf_prepared(out, &ps, shape, transform, config);
+    generate_sdf_prepared(out, &PreparedShape::new(shape), transform, config);
 }
 
-/// [`generate_sdf`] for an already prepared shape (`shape` is used for the optional scanline pass).
-pub fn generate_sdf_prepared(
-    out: &mut Bitmap<1>,
-    ps: &PreparedShape,
-    shape: &Shape,
-    transform: &Transform,
-    config: &GeneratorConfig,
-) {
+/// [`generate_sdf`] for an already prepared shape.
+pub fn generate_sdf_prepared(out: &mut Bitmap<1>, ps: &PreparedShape, transform: &Transform, config: &GeneratorConfig) {
     run::<1, 0, true>(out, ps, transform, config.overlap_support, config.threads);
     if let Some(rule) = config.sign_correction {
-        distance_sign_correction(out, shape, transform, rule);
+        sign_correction(out, ps, transform, rule);
     }
 }
 
 /// Generates a single-channel signed pseudo-distance field (sharp corners, like a single
 /// channel of an MSDF where all edges have the same color).
 pub fn generate_psdf(out: &mut Bitmap<1>, shape: &Shape, transform: &Transform, config: &GeneratorConfig) {
-    let ps = PreparedShape::new(shape);
-    generate_psdf_prepared(out, &ps, shape, transform, config);
+    generate_psdf_prepared(out, &PreparedShape::new(shape), transform, config);
 }
 
+/// [`generate_psdf`] for an already prepared shape.
 pub fn generate_psdf_prepared(
     out: &mut Bitmap<1>,
     ps: &PreparedShape,
-    shape: &Shape,
     transform: &Transform,
     config: &GeneratorConfig,
 ) {
     run::<1, 1, false>(out, ps, transform, config.overlap_support, config.threads);
     if let Some(rule) = config.sign_correction {
-        distance_sign_correction(out, shape, transform, rule);
+        sign_correction(out, ps, transform, rule);
     }
 }
 
 /// Generates a multi-channel signed distance field. The shape must be colored
 /// (see [`crate::edge_coloring_simple`]).
 pub fn generate_msdf(out: &mut Bitmap<3>, shape: &Shape, transform: &Transform, config: &GeneratorConfig) {
-    let ps = PreparedShape::new(shape);
-    generate_msdf_prepared(out, &ps, shape, transform, config);
+    generate_msdf_prepared(out, &PreparedShape::new(shape), transform, config);
 }
 
+/// [`generate_msdf`] for an already prepared shape.
 pub fn generate_msdf_prepared(
     out: &mut Bitmap<3>,
     ps: &PreparedShape,
-    shape: &Shape,
     transform: &Transform,
     config: &GeneratorConfig,
 ) {
     run::<3, 3, false>(out, ps, transform, config.overlap_support, config.threads);
-    post_process(out, ps, shape, transform, config);
+    post_process(out, ps, transform, config);
 }
 
 /// Generates a multi-channel signed distance field with the true distance in the alpha channel.
 pub fn generate_mtsdf(out: &mut Bitmap<4>, shape: &Shape, transform: &Transform, config: &GeneratorConfig) {
-    let ps = PreparedShape::new(shape);
-    generate_mtsdf_prepared(out, &ps, shape, transform, config);
+    generate_mtsdf_prepared(out, &PreparedShape::new(shape), transform, config);
 }
 
+/// [`generate_mtsdf`] for an already prepared shape.
 pub fn generate_mtsdf_prepared(
     out: &mut Bitmap<4>,
     ps: &PreparedShape,
-    shape: &Shape,
     transform: &Transform,
     config: &GeneratorConfig,
 ) {
     run::<4, 3, true>(out, ps, transform, config.overlap_support, config.threads);
-    post_process(out, ps, shape, transform, config);
+    post_process(out, ps, transform, config);
 }
 
 fn post_process<const N: usize>(
     out: &mut Bitmap<N>,
     ps: &PreparedShape,
-    shape: &Shape,
     transform: &Transform,
     config: &GeneratorConfig,
 ) {
     let mut ec = config.error_correction;
     if let Some(rule) = config.sign_correction {
-        let changed = distance_sign_correction(out, shape, transform, rule);
+        let changed = sign_correction(out, ps, transform, rule);
         // If signs had to be fixed, the exact distances disagree with the field there and
         // distance-checked correction would undo the fix.
         if changed > 0 {
@@ -307,6 +296,15 @@ pub fn distance_sign_correction<const N: usize>(
     transform: &Transform,
     fill_rule: FillRule,
 ) -> usize {
+    sign_correction(sdf, &PreparedShape::new(shape), transform, fill_rule)
+}
+
+fn sign_correction<const N: usize>(
+    sdf: &mut Bitmap<N>,
+    shape: &PreparedShape,
+    transform: &Transform,
+    fill_rule: FillRule,
+) -> usize {
     let (w, h) = (sdf.width() as usize, sdf.height() as usize);
     let z = transform.zero_value();
     let proj = transform.projection;
@@ -316,7 +314,7 @@ pub fn distance_sign_correction<const N: usize>(
     let mut matches = vec![0i8; w * h];
     let mut ambiguous = false;
     for r in 0..h {
-        let ty = if shape.inverse_y_axis { r } else { h - 1 - r } as f64 + 0.5;
+        let ty = if shape.inverse_y_axis() { r } else { h - 1 - r } as f64 + 0.5;
         let y = proj.unproject(Vec2::new(0.0, ty)).y;
         shape.scanline(y, &mut crossings);
         let total: i32 = crossings.iter().map(|c| c.1).sum();
