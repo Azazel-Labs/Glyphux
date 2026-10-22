@@ -87,7 +87,9 @@ impl Charset {
                     if a > b {
                         return Err(p.err("range start is greater than its end"));
                     }
-                    set.0.extend(a..=b);
+                    // Both ends are valid code points, so the range holds at most 0x110000;
+                    // surrogates are not characters.
+                    set.0.extend((a..=b).filter(|&c| char::from_u32(c).is_some()));
                 }
                 b'"' => {
                     for c in p.string(b'"')? {
@@ -151,10 +153,15 @@ impl Parser<'_> {
                 } else {
                     tok.parse::<u32>()
                 };
-                v.map_err(|_| CharsetError {
-                    message: format!("invalid number '{tok}'"),
+                let invalid = |what: &str| CharsetError {
+                    message: format!("{what} '{tok}'"),
                     position: start,
-                })
+                };
+                let v = v.map_err(|_| invalid("invalid number"))?;
+                if char::from_u32(v).is_none() {
+                    return Err(invalid("not a Unicode scalar value:"));
+                }
+                Ok(v)
             }
             _ => Err(self.err("expected a number, a character literal, a string or a range")),
         }
@@ -188,9 +195,12 @@ impl Parser<'_> {
                             return Err(self.err("expected \\u{...}"));
                         }
                         let end = r.find('}').ok_or_else(|| self.err("unterminated \\u{...}"))?;
-                        let v = u32::from_str_radix(&r[1..end], 16).map_err(|_| self.err("invalid \\u escape"))?;
+                        let v = u32::from_str_radix(&r[1..end], 16)
+                            .ok()
+                            .and_then(char::from_u32)
+                            .ok_or_else(|| self.err("invalid \\u escape"))?;
                         self.i += end + 1;
-                        v
+                        v as u32
                     }
                     other => other as u32,
                 };
@@ -221,5 +231,18 @@ mod tests {
         assert!(Charset::parse("'ab'").is_err());
         assert!(Charset::parse("\"open").is_err());
         assert_eq!(Charset::ascii().len(), 95);
+    }
+
+    #[test]
+    fn only_unicode_scalar_values() {
+        // Out of range: an error, not billions of entries.
+        assert!(Charset::parse("[0, 0xFFFFFFFF]").is_err());
+        assert!(Charset::parse("0x110000").is_err());
+        assert!(Charset::parse("0xD800").is_err());
+        assert!(Charset::parse(r"'\u{D800}'").is_err());
+        assert!(Charset::parse(r"'\u{110000}'").is_err());
+        // Ranges skip the surrogates.
+        let c = Charset::parse("[0xD7FF, 0xE000]").unwrap();
+        assert_eq!(c.iter().collect::<Vec<_>>(), vec![0xD7FF, 0xE000]);
     }
 }
