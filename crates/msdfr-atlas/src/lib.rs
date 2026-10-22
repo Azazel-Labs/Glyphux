@@ -709,40 +709,41 @@ fn tile<const N: usize>(
 ) -> Bitmap<N> {
     let (w, h) = (p.rect.w, p.rect.h);
     let t = &p.transform;
+    // Single-channel results in an `N`-channel tile (moved as is when `N` is 1).
+    let widen = |b: Bitmap<1>| {
+        if N == 1 {
+            Bitmap::from_data(w, h, b.into_data())
+        } else {
+            Bitmap::from_data(w, h, b.into_data().into_iter().flat_map(|v| [v; N]).collect())
+        }
+    };
     match cfg.atlas_type {
         AtlasType::HardMask | AtlasType::SoftMask => {
             let samples = if cfg.atlas_type == AtlasType::HardMask { 1 } else { 4 };
-            let img = rasterize(&g.shape, w, h, &t.projection, FillRule::NonZero, samples);
-            Bitmap::from_data(w, h, img.into_data().into_iter().flat_map(|v| [v; N]).collect())
+            widen(rasterize(&g.shape, w, h, &t.projection, FillRule::NonZero, samples))
         }
         AtlasType::Sdf => {
             let mut b = Bitmap::<1>::new(w, h);
             generate_sdf(&mut b, &g.shape, t, generator);
-            Bitmap::from_data(w, h, b.into_data().into_iter().flat_map(|v| [v; N]).collect())
+            widen(b)
         }
         AtlasType::Psdf => {
             let mut b = Bitmap::<1>::new(w, h);
             generate_psdf(&mut b, &g.shape, t, generator);
-            Bitmap::from_data(w, h, b.into_data().into_iter().flat_map(|v| [v; N]).collect())
+            widen(b)
         }
-        AtlasType::Msdf => {
-            let mut b = Bitmap::<N>::new(w, h);
-            if N == 3 {
-                let mut m = Bitmap::<3>::new(w, h);
-                generate_msdf(&mut m, &g.shape, t, generator);
-                b = Bitmap::from_data(w, h, m.into_data());
-            }
-            b
+        // `render` picks `N` from the atlas type, so these always match.
+        AtlasType::Msdf if N == 3 => {
+            let mut m = Bitmap::<3>::new(w, h);
+            generate_msdf(&mut m, &g.shape, t, generator);
+            Bitmap::from_data(w, h, m.into_data())
         }
-        AtlasType::Mtsdf => {
-            let mut b = Bitmap::<N>::new(w, h);
-            if N == 4 {
-                let mut m = Bitmap::<4>::new(w, h);
-                generate_mtsdf(&mut m, &g.shape, t, generator);
-                b = Bitmap::from_data(w, h, m.into_data());
-            }
-            b
+        AtlasType::Mtsdf if N == 4 => {
+            let mut m = Bitmap::<4>::new(w, h);
+            generate_mtsdf(&mut m, &g.shape, t, generator);
+            Bitmap::from_data(w, h, m.into_data())
         }
+        AtlasType::Msdf | AtlasType::Mtsdf => Bitmap::new(w, h),
     }
 }
 
@@ -752,20 +753,21 @@ fn render_into<const N: usize>(font: &FontGeometry, layout: &AtlasLayout, cfg: &
     let jobs: Vec<usize> = (0..font.glyphs.len())
         .filter(|&i| layout.placements[i].is_some())
         .collect();
-    let tiles = par_map(&jobs, cfg.threads, |&i| {
-        tile::<N>(&font.glyphs[i], &layout.placements[i].unwrap(), cfg, &generator)
-    });
-    let mut atlas = Bitmap::<N>::new(layout.width, layout.height);
     // Background: "outside" for fields (value 0 = far outside), empty for masks.
-    for (k, &i) in jobs.iter().enumerate() {
-        let r = layout.placements[i].unwrap().rect;
-        let t = &tiles[k];
+    let atlas = std::sync::Mutex::new(Bitmap::<N>::new(layout.width, layout.height));
+    // Each tile is copied in as soon as it is done (a quick copy under the lock), so only the
+    // tiles being generated are in memory besides the atlas.
+    par_map(&jobs, cfg.threads, |&i| {
+        let p = layout.placements[i].unwrap();
+        let t = tile::<N>(&font.glyphs[i], &p, cfg, &generator);
+        let r = p.rect;
+        let mut atlas = atlas.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         for y in 0..r.h {
             let dst = ((r.y + y) as usize * layout.width as usize + r.x as usize) * N;
             atlas.data_mut()[dst..dst + r.w as usize * N].copy_from_slice(t.row(y));
         }
-    }
-    atlas
+    });
+    atlas.into_inner().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// Generates the atlas image for a layout.
