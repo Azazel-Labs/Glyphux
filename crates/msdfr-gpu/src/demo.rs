@@ -5,11 +5,12 @@
 //! the characters, the first fallback that does elsewhere.
 
 use std::collections::HashMap;
+use std::fmt::Write as _;
 use std::sync::Arc;
 
 use crate::atlas::{AtlasConfig, GlyphAtlas, GlyphKey};
 use crate::shaping::{ShapedLine, Shaper, ShapingFont};
-use crate::text::{GlyphInstance, TextRenderer, TextStyle};
+use crate::text::{GlyphInstance, ResolvedStyle, TextRenderer, TextStyle};
 use crate::units::{Units, em, px};
 
 /// Taglines the subtitle decodes into, one after another.
@@ -75,6 +76,7 @@ fn smoothstep(e0: f32, e1: f32, x: f32) -> f32 {
 }
 
 /// A polyline sampled from a curve, parametrized by arc length.
+#[derive(Default)]
 struct Path {
     points: Vec<[f32; 2]>,
     /// Arc length at each point.
@@ -82,14 +84,18 @@ struct Path {
 }
 
 impl Path {
-    fn sample(n: usize, f: impl Fn(f32) -> [f32; 2]) -> Self {
-        let points: Vec<[f32; 2]> = (0..=n).map(|i| f(i as f32 / n as f32)).collect();
-        let mut lengths = vec![0.0];
-        for w in points.windows(2) {
-            let d = ((w[1][0] - w[0][0]).powi(2) + (w[1][1] - w[0][1]).powi(2)).sqrt();
-            lengths.push(lengths.last().unwrap() + d);
+    /// Samples `f` over `[0, 1]` at `n + 1` points (reusing the buffers).
+    fn sample(&mut self, n: usize, f: impl Fn(f32) -> [f32; 2]) -> &Self {
+        self.points.clear();
+        self.points.extend((0..=n).map(|i| f(i as f32 / n as f32)));
+        self.lengths.clear();
+        let mut total = 0.0;
+        self.lengths.push(total);
+        for w in self.points.windows(2) {
+            total += ((w[1][0] - w[0][0]).powi(2) + (w[1][1] - w[0][1]).powi(2)).sqrt();
+            self.lengths.push(total);
         }
-        Path { points, lengths }
+        self
     }
 
     fn length(&self) -> f32 {
@@ -132,11 +138,65 @@ struct Shaped {
     width: f32,
 }
 
+impl Shaped {
+    /// Glyphs in order with their font and run offset.
+    fn glyphs(&self) -> impl Iterator<Item = (usize, f32, &crate::shaping::ShapedGlyph)> {
+        self.runs
+            .iter()
+            .flat_map(|r| r.line.glyphs.iter().map(move |g| (r.font, r.x, g)))
+    }
+}
+
+/// Lines shaped in recent frames, by font choice (`None`: per-character fallback) and text.
+/// Most of the scene's text is the same from frame to frame, and shaping it is the bulk of
+/// the scene's CPU work.
+#[derive(Default)]
+struct ShapeCache {
+    lines: HashMap<Option<usize>, HashMap<String, Cached>>,
+    frame: u64,
+}
+
+/// A shaped line and the frame it was last used in.
+type Cached = (Arc<Shaped>, u64);
+
+impl ShapeCache {
+    fn get(&mut self, font: Option<usize>, text: &str) -> Option<Arc<Shaped>> {
+        let frame = self.frame;
+        let entry = self.lines.get_mut(&font)?.get_mut(text)?;
+        entry.1 = frame;
+        Some(entry.0.clone())
+    }
+
+    fn insert(&mut self, font: Option<usize>, text: &str, shaped: Arc<Shaped>) {
+        let frame = self.frame;
+        self.lines
+            .entry(font)
+            .or_default()
+            .insert(text.to_owned(), (shaped, frame));
+    }
+
+    /// Ends a frame: lines not used in it are dropped, so text that changes every frame (the
+    /// scrambled subtitle, the timings) is shaped once and gone a frame later, without
+    /// evicting the lines that stay.
+    fn end_frame(&mut self) {
+        let frame = self.frame;
+        for lines in self.lines.values_mut() {
+            lines.retain(|_, e| e.1 == frame);
+        }
+        self.frame += 1;
+    }
+
+    /// After the fonts change.
+    fn clear(&mut self) {
+        self.lines.clear();
+    }
+}
+
 /// What a layout step needs, borrowed from the scene.
 struct Ctx<'a> {
     fonts: &'a [NamedFont],
     primary: usize,
-    runs_for: &'a mut HashMap<String, Vec<(usize, std::ops::Range<usize>)>>,
+    cache: &'a mut ShapeCache,
     shaper: &'a mut Shaper,
     atlas: &'a mut GlyphAtlas,
     out: &'a mut Vec<GlyphInstance>,
@@ -147,10 +207,7 @@ impl Ctx<'_> {
     /// Splits `text` into runs by font (byte ranges): letters and digits go to the primary
     /// font if it has them; anything else stays in the current run's font if that has it;
     /// otherwise the first font that has the character takes over.
-    fn split(&mut self, text: &str) -> Vec<(usize, std::ops::Range<usize>)> {
-        if let Some(r) = self.runs_for.get(text) {
-            return r.clone();
-        }
+    fn split(&self, text: &str) -> Vec<(usize, std::ops::Range<usize>)> {
         let has = |f: usize, c: char| self.fonts[f].font.has_glyph(c);
         let mut runs: Vec<(usize, std::ops::Range<usize>)> = Vec::new();
         for (i, c) in text.char_indices() {
@@ -171,15 +228,14 @@ impl Ctx<'_> {
                 _ => runs.push((f, i..i + c.len_utf8())),
             }
         }
-        // Changing text (the scrambling subtitle) would grow the cache without bound.
-        if self.runs_for.len() > 512 {
-            self.runs_for.clear();
-        }
-        self.runs_for.insert(text.to_owned(), runs.clone());
         runs
     }
 
-    fn shape(&mut self, text: &str) -> Shaped {
+    /// `text` shaped run by run in the fonts that have its characters.
+    fn shape(&mut self, text: &str) -> Arc<Shaped> {
+        if let Some(s) = self.cache.get(None, text) {
+            return s;
+        }
         let mut x = 0.0;
         let mut runs = Vec::new();
         for (font, range) in self.split(text) {
@@ -188,7 +244,9 @@ impl Ctx<'_> {
             runs.push(Run { font, line, x });
             x += w;
         }
-        Shaped { runs, width: x }
+        let shaped = Arc::new(Shaped { runs, width: x });
+        self.cache.insert(None, text, shaped.clone());
+        shaped
     }
 
     /// Logical pixels per em of text in `style`.
@@ -198,8 +256,7 @@ impl Ctx<'_> {
 
     /// Places one glyph with its origin at `origin`, optionally rotated about a pivot
     /// (logical pixels).
-    fn glyph(&mut self, f: usize, glyph: u32, origin: [f32; 2], style: &TextStyle, rotation: Option<(f32, [f32; 2])>) {
-        let rs = style.resolve(&self.units);
+    fn glyph(&mut self, f: usize, glyph: u32, origin: [f32; 2], rs: &ResolvedStyle, rotation: Option<(f32, [f32; 2])>) {
         let font = &self.fonts[f].font;
         let key = GlyphKey { font: font.id, glyph };
         let (size, reach) = (f64::from(rs.px_per_em), f64::from(rs.reach()));
@@ -217,13 +274,18 @@ impl Ctx<'_> {
     }
 
     /// Shapes `text` in font `f` only (no fallback).
-    fn shape_in(&mut self, f: usize, text: &str) -> Shaped {
+    fn shape_in(&mut self, f: usize, text: &str) -> Arc<Shaped> {
+        if let Some(s) = self.cache.get(Some(f), text) {
+            return s;
+        }
         let line = self.shaper.shape_line(&self.fonts[f].font, text);
         let width = line.width;
-        Shaped {
+        let shaped = Arc::new(Shaped {
             runs: vec![Run { font: f, line, x: 0.0 }],
             width,
-        }
+        });
+        self.cache.insert(Some(f), text, shaped.clone());
+        shaped
     }
 
     /// Sets a shaped line in the size of `base` with a per-glyph style, offset (logical pixels)
@@ -236,15 +298,11 @@ impl Ctx<'_> {
         each: impl Fn(usize) -> (TextStyle, [f32; 2], f32),
     ) -> [f32; 2] {
         let em = self.em(base);
-        let glyphs = shaped
-            .runs
-            .iter()
-            .flat_map(|r| r.line.glyphs.iter().map(move |g| (r.font, r.x, g)));
-        for (i, (font, x, sg)) in glyphs.enumerate() {
+        for (i, (font, x, sg)) in shaped.glyphs().enumerate() {
             let (style, d, angle) = each(i);
             let at = [origin[0] + (x + sg.x) * em + d[0], origin[1] - sg.y * em + d[1]];
             let pivot = [at[0] + 0.5 * sg.advance * em, at[1]];
-            self.glyph(font, sg.glyph, at, &style, Some((angle, pivot)));
+            self.glyph(font, sg.glyph, at, &style.resolve(&self.units), Some((angle, pivot)));
         }
         [origin[0] + shaped.width * em, origin[1]]
     }
@@ -252,11 +310,10 @@ impl Ctx<'_> {
     /// Sets a shaped line on a straight baseline starting at `origin`; returns the pen after it.
     fn place(&mut self, shaped: &Shaped, origin: [f32; 2], style: &TextStyle) -> [f32; 2] {
         let em = self.em(style);
-        for run in &shaped.runs {
-            for sg in &run.line.glyphs {
-                let at = [origin[0] + (run.x + sg.x) * em, origin[1] - sg.y * em];
-                self.glyph(run.font, sg.glyph, at, style, None);
-            }
+        let rs = style.resolve(&self.units);
+        for (font, x, sg) in shaped.glyphs() {
+            let at = [origin[0] + (x + sg.x) * em, origin[1] - sg.y * em];
+            self.glyph(font, sg.glyph, at, &rs, None);
         }
         [origin[0] + shaped.width * em, origin[1]]
     }
@@ -266,12 +323,14 @@ impl Ctx<'_> {
         self.place(&shaped, origin, style)
     }
 
-    /// Sets `text` in the size of `base` along `path`, its start `start` logical pixels along
-    /// it (wrapping around if `closed`, else glyphs off either end are dropped). `style` gets
-    /// each glyph's index.
+    /// Sets `copies` copies of a shaped line in the size of `base` along `path`, starting
+    /// `start` logical pixels along it (wrapping around if `closed`, else glyphs off either end
+    /// are dropped). `style` gets each glyph's index.
+    #[allow(clippy::too_many_arguments)]
     fn on_path(
         &mut self,
-        text: &str,
+        shaped: &Shaped,
+        copies: usize,
         base: &TextStyle,
         path: &Path,
         start: f32,
@@ -279,12 +338,12 @@ impl Ctx<'_> {
         style: impl Fn(usize) -> TextStyle,
     ) {
         let em = self.em(base);
-        let shaped = self.shape(text);
         let total = path.length();
-        let glyphs = shaped
-            .runs
-            .iter()
-            .flat_map(|r| r.line.glyphs.iter().map(move |g| (r.font, r.x, g)));
+        let glyphs = (0..copies).flat_map(|k| {
+            shaped
+                .glyphs()
+                .map(move |(f, x, g)| (f, x + k as f32 * shaped.width, g))
+        });
         for (i, (font, x, sg)) in glyphs.enumerate() {
             let mid = start + (x + sg.x + 0.5 * sg.advance) * em;
             let s = if closed { mid.rem_euclid(total) } else { mid };
@@ -294,7 +353,7 @@ impl Ctx<'_> {
             let (p, angle) = path.at(s);
             // The glyph's baseline midpoint sits on the path; the quad turns about it.
             let origin = [p[0] - 0.5 * sg.advance * em, p[1] - sg.y * em];
-            self.glyph(font, sg.glyph, origin, &style(i), Some((angle, p)));
+            self.glyph(font, sg.glyph, origin, &style(i).resolve(&self.units), Some((angle, p)));
         }
     }
 }
@@ -302,7 +361,7 @@ impl Ctx<'_> {
 pub struct Scene {
     fonts: Vec<NamedFont>,
     primary: usize,
-    runs_for: HashMap<String, Vec<(usize, std::ops::Range<usize>)>>,
+    cache: ShapeCache,
     shaper: Shaper,
     pub atlas: GlyphAtlas,
     renderer: TextRenderer,
@@ -322,6 +381,17 @@ pub struct Scene {
     pub show_atlas: bool,
     /// The target's device scale ([`Self::set_scale`]); the scene is laid out in logical pixels.
     units: Units,
+    /// Buffers reused from frame to frame.
+    scratch: Scratch,
+}
+
+/// Per-frame buffers kept by the scene so that a frame allocates next to nothing.
+#[derive(Default)]
+struct Scratch {
+    stats: Vec<String>,
+    text: String,
+    ring: Path,
+    spline: Path,
 }
 
 /// Weights the variable font is instanced at; the shader's weight offset blends between them.
@@ -358,7 +428,7 @@ impl Scene {
         let mut scene = Scene {
             fonts: Vec::new(),
             primary: 0,
-            runs_for: HashMap::new(),
+            cache: ShapeCache::default(),
             shaper: Shaper::new(),
             atlas: GlyphAtlas::new(device, config),
             renderer: TextRenderer::new(device, target),
@@ -372,6 +442,7 @@ impl Scene {
             weights: Vec::new(),
             show_atlas: false,
             units: Units::default(),
+            scratch: Scratch::default(),
         };
         scene.add_font(name, font_data, 0)?;
         Ok(scene)
@@ -398,7 +469,7 @@ impl Scene {
         } else {
             self.fonts[slot] = named;
         }
-        self.runs_for.clear();
+        self.cache.clear();
         Ok(())
     }
 
@@ -423,6 +494,7 @@ impl Scene {
                 self.fonts.push(named);
             }
         }
+        self.cache.clear();
         Ok(())
     }
 
@@ -433,7 +505,7 @@ impl Scene {
             return false;
         };
         self.primary = i;
-        self.runs_for.clear();
+        self.cache.clear();
         true
     }
 
@@ -455,18 +527,27 @@ impl Scene {
         self.profiler.is_some()
     }
 
-    /// The timing overlay (top right), one string per line.
-    fn stats_lines(&self) -> Vec<String> {
-        let mut lines = Vec::new();
+    /// Writes the timing overlay (top right) into `lines`, one string per line, reusing
+    /// their buffers.
+    fn stats_lines(&self, lines: &mut Vec<String>) {
+        let mut n = 0;
+        let mut line = |args: std::fmt::Arguments<'_>| {
+            if n == lines.len() {
+                lines.push(String::new());
+            }
+            lines[n].clear();
+            let _ = lines[n].write_fmt(args);
+            n += 1;
+        };
         let get = |v: &[(&str, f64)], k: &str| v.iter().find(|(l, _)| *l == k).map(|(_, t)| *t);
         if self.profiler.is_some() {
             if let Some(t) = get(&self.gpu_times, "msdfr text") {
-                lines.push(format!("GPU text draw {t:.3} ms"));
+                line(format_args!("GPU text draw {t:.3} ms"));
             }
             let g = &self.gpu_generation;
             if !g.is_empty() {
                 let total: f64 = g.iter().map(|(_, t)| t).sum();
-                lines.push(format!(
+                line(format_args!(
                     "last generation {total:.3} ms (distance {:.3}, correction {:.3}, store {:.3})",
                     get(g, "msdfr distance").unwrap_or(0.0),
                     get(g, "msdfr correction").unwrap_or(0.0),
@@ -474,26 +555,30 @@ impl Scene {
                 ));
             }
         } else {
-            lines.push("no GPU timestamps on this device".to_owned());
+            line(format_args!("no GPU timestamps on this device"));
         }
         let st = self.atlas.stats();
-        let glyphs = format!(
+        #[cfg(not(target_arch = "wasm32"))]
+        line(format_args!(
+            "CPU {:.2} ms  ·  {} glyphs generated, {} raised by the detail probe",
+            self.cpu_ms, st.generated, st.probe_upgrades
+        ));
+        #[cfg(target_arch = "wasm32")]
+        line(format_args!(
             "{} glyphs generated, {} raised by the detail probe",
             st.generated, st.probe_upgrades
-        );
-        #[cfg(not(target_arch = "wasm32"))]
-        let glyphs = format!("CPU {:.2} ms  ·  {glyphs}", self.cpu_ms);
-        lines.push(glyphs);
-        lines.push(format!("font: {}", self.fonts[self.primary].name));
-        lines
+        ));
+        line(format_args!("font: {}", self.fonts[self.primary].name));
+        lines.truncate(n);
     }
 
     /// Lays out the scene at time `t` (seconds) for a target of `size` physical pixels.
     #[allow(clippy::too_many_lines)]
     fn layout(&mut self, size: [f32; 2], t: f32) {
         self.instances.clear();
-        let stats = self.stats_lines();
-        let weights = self.weights.clone();
+        let mut scratch = std::mem::take(&mut self.scratch);
+        self.stats_lines(&mut scratch.stats);
+        let weights = &self.weights;
         let units = self.units;
         // Everything below is in logical pixels.
         let (w, full_h) = (size[0] / units.scale, size[1] / units.scale);
@@ -518,7 +603,7 @@ impl Scene {
         let mut cx = Ctx {
             fonts: &self.fonts,
             primary: self.primary,
-            runs_for: &mut self.runs_for,
+            cache: &mut self.cache,
             shaper: &mut self.shaper,
             atlas: &mut self.atlas,
             out: &mut self.instances,
@@ -531,12 +616,16 @@ impl Scene {
         let h = full_h - strip;
         let scale = (h / 720.0).clamp(0.6, 2.0);
         let text = |size: f32, color: [f32; 4]| TextStyle::new(px(size), color);
+        // Labels are written into one reused buffer.
+        let label = &mut scratch.text;
         if let Some((size, at)) = strip_label {
-            let label = format!(
+            label.clear();
+            let _ = write!(
+                label,
                 "atlas: {layers} pages of {0}×{0} texels, generated as text needs them",
                 cx.atlas.config().size
             );
-            cx.line(&label, at, &text(size, dim));
+            cx.line(label, at, &text(size, dim));
         }
 
         // Title: "msdfr" bouncing letter by letter, wobbling, glowing with a slow pulse;
@@ -570,19 +659,16 @@ impl Scene {
         let target = TAGLINES[k % TAGLINES.len()];
         let revealed = (smoothstep(0.0, 1.6, t - k as f32 * period) * target.chars().count() as f32) as usize;
         let tick = (t * 24.0) as usize;
-        let shown: String = target
-            .chars()
-            .enumerate()
-            .map(|(i, c)| {
-                if i < revealed || c == ' ' {
-                    c
-                } else {
-                    let r = (i * 7919 + tick * 104_729) % SCRAMBLE.len();
-                    SCRAMBLE[r] as char
-                }
-            })
-            .collect();
-        cx.line(&shown, [margin, margin + title * 1.15 + sub], &text(sub, dim));
+        label.clear();
+        label.extend(target.chars().enumerate().map(|(i, c)| {
+            if i < revealed || c == ' ' {
+                c
+            } else {
+                let r = (i * 7919 + tick * 104_729) % SCRAMBLE.len();
+                SCRAMBLE[r] as char
+            }
+        }));
+        cx.line(label, [margin, margin + title * 1.15 + sub], &text(sub, dim));
 
         // Size ladder (the label column is fixed so the samples line up), one script after
         // another.
@@ -591,7 +677,9 @@ impl Scene {
         for s in [9.0, 12.0, 16.0, 24.0, 36.0] {
             let s = s * scale;
             y += s * 1.3;
-            cx.line(&format!("{} px", s.round()), [margin, y], &text(11.0 * scale, dim));
+            label.clear();
+            let _ = write!(label, "{} px", s.round());
+            cx.line(label, [margin, y], &text(11.0 * scale, dim));
             cx.line(pangram, [margin + 60.0 * scale, y], &text(s, fg));
         }
 
@@ -614,15 +702,16 @@ impl Scene {
         );
         cx.place(&glyph, [center[0] - gw * 0.5, center[1] + big * 0.36], &style);
         let r = big * 0.8;
-        let ring = Path::sample(256, |u| {
+        let ring = scratch.ring.sample(256, |u| {
             let a = u * std::f32::consts::TAU;
             [center[0] + r * a.cos(), center[1] + r * a.sin()]
         });
         let ring_px = big * 0.085;
         let ring_style = text(ring_px, fg);
         // Enough copies of the ring text to go all the way round.
-        let copies = (ring.length() / (cx.shape(RING).width * ring_px)).floor().max(1.0) as usize;
-        cx.on_path(&RING.repeat(copies), &ring_style, &ring, -t * big * 0.25, true, |i| {
+        let ring_text = cx.shape(RING);
+        let copies = (ring.length() / (ring_text.width * ring_px)).floor().max(1.0) as usize;
+        cx.on_path(&ring_text, copies, &ring_style, ring, -t * big * 0.25, true, |i| {
             let h = t * 0.05 + i as f32 / 48.0;
             ring_style.color(hue(h, 1.0)).glow(hue(h, 0.45), em(0.25))
         });
@@ -643,7 +732,7 @@ impl Scene {
             [x0 + (x1 - x0) * 2.0 / 3.0, wave_y + amp * 2.0 * (t * 1.4 + 1.0).sin()],
             [x1, wave_y + amp * 0.5 * (t * 0.7).cos()],
         ];
-        let spline = Path::sample(128, |u| {
+        let spline = scratch.spline.sample(128, |u| {
             let v = 1.0 - u;
             let b = [v * v * v, 3.0 * v * v * u, 3.0 * v * u * u, u * u * u];
             [0, 1].map(|c| (0..4).map(|i| b[i] * ctrl[i][c]).sum())
@@ -655,11 +744,11 @@ impl Scene {
         } else {
             self.text.as_str()
         };
-        let measured = cx.shape(user);
+        let user = cx.shape(user);
         // Scrolls in from the right, across, and out at the left, then again.
-        let travel = spline.length() + measured.width * text_px;
+        let travel = spline.length() + user.width * text_px;
         let start = spline.length() - (t * 90.0 * scale).rem_euclid(travel);
-        cx.on_path(user, &flowing, &spline, start, false, |i| {
+        cx.on_path(&user, 1, &flowing, spline, start, false, |i| {
             let twinkle = 0.6 + 0.4 * (t * 3.0 + i as f32 * 0.5).sin();
             flowing.glow(hue(t * 0.15 + i as f32 * 0.04, 0.85), em(0.45 * twinkle))
         });
@@ -676,17 +765,20 @@ impl Scene {
             .outline(srgb(0x0b, 0x4a, 0x44, 1.0), em(0.03))
             .glow(srgb(0x4f, 0xd1, 0xc5, 0.5), em(0.2));
         cx.line(zoom_text, [margin, base], &style);
-        let label = format!("{s:.0} px  ·  size level {level} texels/em");
-        cx.line(&label, [margin, h - margin], &text(label_size, dim));
+        label.clear();
+        let _ = write!(label, "{s:.0} px  ·  size level {level} texels/em");
+        cx.line(label, [margin, h - margin], &text(label_size, dim));
 
         // Timings, top right.
         let size_px = (11.0 * scale).max(10.0);
-        for (i, line) in stats.iter().enumerate() {
+        for (i, line) in scratch.stats.iter().enumerate() {
             let shaped = cx.shape(line);
             let x = w - margin - shaped.width * size_px;
             let y = margin + size_px * (1.0 + 1.5 * i as f32);
             cx.place(&shaped, [x.max(margin), y], &text(size_px, dim));
         }
+        self.cache.end_frame();
+        self.scratch = scratch;
     }
 
     /// Renders a frame into `target` (`size` in pixels). Submits its own command buffer.
@@ -701,12 +793,15 @@ impl Scene {
         #[cfg(not(target_arch = "wasm32"))]
         let start = std::time::Instant::now();
         if let Some(p) = &mut self.profiler {
-            let latest = p.latest().to_vec();
+            let latest = p.latest();
             if !latest.is_empty() {
                 if latest.iter().any(|(l, _)| l.starts_with("msdfr d")) {
-                    self.gpu_generation = latest.iter().filter(|(l, _)| *l != "msdfr text").copied().collect();
+                    self.gpu_generation.clear();
+                    self.gpu_generation
+                        .extend(latest.iter().filter(|(l, _)| *l != "msdfr text"));
                 }
-                self.gpu_times = latest;
+                self.gpu_times.clear();
+                self.gpu_times.extend_from_slice(latest);
             }
         }
         self.atlas.begin_frame();
