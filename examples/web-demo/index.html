@@ -86,17 +86,26 @@
         .catch((e) => console.warn(`InterVariable: ${e}`));
 
       // Inter is built in; the Noto subsets cover the scene's CJK, Arabic, Devanagari and
-      // Thai lines and are added as fallbacks in this order.
+      // Thai lines and are added as fallbacks in this order (the first that has a character
+      // draws it: JP before SC for the Han characters they share). They download in
+      // parallel and are added once all have arrived, so the order never depends on which
+      // download finishes first.
       option("bundled", "Inter", "Inter");
       const bundled = ["JP", "SC", "KR", "Arabic", "Devanagari", "Thai"];
-      for (const s of bundled) {
-        const name = `Noto Sans ${s}`;
-        option("bundled", name, `${name} (subset)`);
-        fetch(`assets/NotoSans${s}-Subset.ttf`)
-          .then((r) => r.ok ? r.arrayBuffer() : Promise.reject(r.statusText))
-          .then((b) => demo.add_font(name, new Uint8Array(b)))
-          .catch((e) => console.warn(`${name}: ${e}`));
-      }
+      const downloads = bundled.map((s) => {
+        option("bundled", `Noto Sans ${s}`, `Noto Sans ${s} (subset)`);
+        return fetch(`assets/NotoSans${s}-Subset.ttf`)
+          .then((r) => r.ok ? r.arrayBuffer() : Promise.reject(r.statusText));
+      });
+      Promise.allSettled(downloads).then((results) => results.forEach((r, i) => {
+        const name = `Noto Sans ${bundled[i]}`;
+        try {
+          if (r.status !== "fulfilled") throw r.reason;
+          demo.add_font(name, new Uint8Array(r.value));
+        } catch (e) {
+          console.warn(`${name}: ${e.message ?? e}`);
+        }
+      }));
 
       select.value = "Inter";
       note("queryLocalFonts" in window
