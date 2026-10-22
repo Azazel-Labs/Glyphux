@@ -955,7 +955,7 @@ pub fn correct_msdf<const N: usize>(
     overlap: bool,
     threads: usize,
 ) -> usize {
-    assert!(N >= 3);
+    const { assert!(N >= 3, "error correction needs a multi-channel field") };
     if cfg.mode == ErrorCorrectionMode::Disabled || sdf.width() == 0 || sdf.height() == 0 {
         return 0;
     }
@@ -992,7 +992,10 @@ pub fn correct_msdf_fast<const N: usize>(
     inverse_y: bool,
     min_deviation_ratio: f64,
 ) -> usize {
-    assert!(N >= 3);
+    const { assert!(N >= 3, "error correction needs a multi-channel field") };
+    if sdf.width() == 0 || sdf.height() == 0 {
+        return 0;
+    }
     let cfg = ErrorCorrectionConfig {
         min_deviation_ratio,
         ..Default::default()

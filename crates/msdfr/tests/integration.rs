@@ -172,3 +172,16 @@ fn png_output_is_valid_zlib() {
     let png = io::image::encode(&b, io::ImageFormat::Png);
     assert_eq!(&png[1..4], b"PNG");
 }
+
+/// Empty fields are a no-op everywhere, not a panic.
+#[test]
+fn empty_fields() {
+    let t = Transform::new(Projection::uniform(1.0, Vec2::ZERO), Range::symmetric(1.0));
+    for (w, h) in [(0, 0), (0, 4), (4, 0)] {
+        let mut b = Bitmap::<3>::new(w, h);
+        assert_eq!(correct_msdf_fast(&mut b, &t, false, 1.11), 0);
+        let img = render_sdf(&b, 4, 4, 2.0, 0.5);
+        assert_eq!(img.data().len(), 16);
+        assert_eq!(b.sample(1.0, 1.0), [0.0; 3]);
+    }
+}

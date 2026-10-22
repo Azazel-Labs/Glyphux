@@ -103,10 +103,14 @@ impl<const N: usize> Bitmap<N> {
     }
 
     /// Bilinearly interpolates the bitmap at texel-space position `(x, y)` where `(0, 0)` is the
-    /// top-left corner of the top-left texel (texel centers at half-integers). Clamps to edges.
+    /// top-left corner of the top-left texel (texel centers at half-integers). Clamps to edges;
+    /// an empty bitmap samples as zeros.
     pub fn sample(&self, x: f64, y: f64) -> [f32; N] {
         let w = self.width as i64;
         let h = self.height as i64;
+        if w == 0 || h == 0 {
+            return [0.0; N];
+        }
         let fx = x - 0.5;
         let fy = y - 0.5;
         let x0 = fx.floor();
