@@ -123,7 +123,8 @@ pub struct TextRenderer {
     layout: wgpu::BindGroupLayout,
     globals: wgpu::Buffer,
     sampler: wgpu::Sampler,
-    bind_group: Option<wgpu::BindGroup>,
+    /// Bound to the texture of the atlas last passed to `prepare`.
+    bind_group: Option<(wgpu::Texture, wgpu::BindGroup)>,
     instances: Option<wgpu::Buffer>,
     capacity: usize,
     count: u32,
@@ -234,7 +235,8 @@ impl TextRenderer {
         }
     }
 
-    /// Uploads this frame's glyphs (`viewport`: target size in pixels).
+    /// Uploads this frame's glyphs (`viewport`: target size in pixels), drawn from `atlas`
+    /// (any atlas: the renderer rebinds when it changes).
     pub fn prepare(
         &mut self,
         device: &wgpu::Device,
@@ -254,8 +256,8 @@ impl TextRenderer {
             },
         };
         queue.write_buffer(&self.globals, 0, bytemuck::bytes_of(&g));
-        if self.bind_group.is_none() {
-            self.bind_group = Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
+        if self.bind_group.as_ref().is_none_or(|(t, _)| t != atlas.texture()) {
+            let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("msdfr text"),
                 layout: &self.layout,
                 entries: &[
@@ -272,7 +274,8 @@ impl TextRenderer {
                         resource: wgpu::BindingResource::Sampler(&self.sampler),
                     },
                 ],
-            }));
+            });
+            self.bind_group = Some((atlas.texture().clone(), bg));
         }
         self.count = instances.len() as u32;
         if instances.is_empty() {
@@ -295,7 +298,7 @@ impl TextRenderer {
 
     /// Draws the prepared glyphs.
     pub fn render(&self, pass: &mut wgpu::RenderPass<'_>) {
-        let (Some(bg), Some(inst)) = (&self.bind_group, &self.instances) else {
+        let (Some((_, bg)), Some(inst)) = (&self.bind_group, &self.instances) else {
             return;
         };
         if self.count == 0 {
