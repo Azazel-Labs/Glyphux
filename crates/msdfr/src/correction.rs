@@ -381,41 +381,55 @@ impl<'a> Corrector<'a> {
     fn find_errors_with_distance(&mut self, shape: &PreparedShape, overlap: bool, threads: usize, only_flagged: bool) {
         let (w, h) = (self.f.w, self.f.h);
         self.ensure_gates();
+        let spans = self.spans();
         let dirs = &self.dirs;
-        let todo: Vec<i64> = (0..h)
-            .filter(|&r| {
-                let a = (r * w) as usize..((r + 1) * w) as usize;
-                self.stencil[a.clone()]
-                    .iter()
-                    .zip(&dirs[a])
-                    .any(|(s, &d)| d != 0 && s & ERROR == 0 && (!only_flagged || s & NEEDS_CHECK != 0))
+        let examine =
+            move |flags: u8, d: u32| d != 0 && flags & ERROR == 0 && (!only_flagged || flags & NEEDS_CHECK != 0);
+        // Each texel only reads and writes its own stencil entry: rows with something to
+        // examine are handed out directly.
+        let mut todo = Vec::new();
+        let rows: Vec<&mut [u8]> = self
+            .stencil
+            .chunks_mut(w as usize)
+            .zip(dirs.chunks(w as usize))
+            .enumerate()
+            .filter(|(_, (row, d))| row.iter().zip(*d).any(|(&s, &d)| examine(s, d)))
+            .map(|(r, (row, _))| {
+                todo.push(r as i64);
+                row
             })
             .collect();
         if todo.is_empty() {
             return;
         }
-        let spans = self.spans();
         let mapping = self.transform.mapping();
         let proj = self.transform.projection;
         let inverse_y = self.inverse_y;
         let zero = self.zero;
         let improve = self.min_improve_ratio;
         let field = &self.f;
-        let stencil = &self.stencil;
-        let mut results: Vec<Vec<u8>> = todo.iter().map(|_| vec![0u8; w as usize]).collect();
-        let rows: Vec<&mut [u8]> = results.iter_mut().map(Vec::as_mut_slice).collect();
         crate::generate::par_rows(
             rows,
             threads,
             || Evaluator::<1, false>::new(shape, overlap),
-            |k, ev, out| {
+            |k, ev, row| {
                 let r = todo[k];
                 let ty = if inverse_y { r } else { h - 1 - r };
+                let dirs = &dirs[(r * w) as usize..((r + 1) * w) as usize];
+                // Exact distances are sampled within a texel of the examined texel: restrict
+                // the evaluator to each run of texels (plus that margin) that needs it.
+                const RUN: i64 = 8;
+                let mut tile_end = 0;
                 for x in 0..w {
-                    let flags = stencil[(r * w + x) as usize];
-                    let d = dirs[(r * w + x) as usize];
-                    if d == 0 || flags & ERROR != 0 || (only_flagged && flags & NEEDS_CHECK == 0) {
+                    let (flags, d) = (row[x as usize], dirs[x as usize]);
+                    if !examine(flags, d) {
                         continue;
+                    }
+                    if x >= tile_end {
+                        tile_end = (x + RUN).min(w);
+                        let a = proj.unproject(Vec2::new(x as f64 - 0.5, ty as f64 - 0.5));
+                        let b = proj.unproject(Vec2::new(tile_end as f64 + 0.5, ty as f64 + 1.5));
+                        ev.set_tile(a.min(b), a.max(b));
                     }
                     let prot = only_flagged || flags & PROTECTED != 0;
                     let c = field.px(x, r);
@@ -434,18 +448,11 @@ impl<'a> Corrector<'a> {
                         improve,
                     };
                     if texel_has_artifact(field, x, r, d, &spans, prot, zero, &mut cls) {
-                        out[x as usize] = 1;
+                        row[x as usize] |= ERROR;
                     }
                 }
             },
         );
-        for (k, &r) in todo.iter().enumerate() {
-            for x in 0..w as usize {
-                if results[k][x] != 0 {
-                    self.stencil[r as usize * w as usize + x] |= ERROR;
-                }
-            }
-        }
     }
 
     fn error_count(&self) -> usize {
