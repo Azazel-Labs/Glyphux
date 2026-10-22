@@ -315,7 +315,6 @@ pub fn edge_coloring_by_distance(shape: &mut Shape, angle_threshold: f64, seed: 
                     break;
                 }
             }
-            let idx = first + k;
             splines.push(Spline {
                 contour: ci,
                 edges,
@@ -323,7 +322,6 @@ pub fn edge_coloring_by_distance(shape: &mut Shape, angle_threshold: f64, seed: 
                 prev: first + (k + n - 1) % n,
                 next: first + (k + 1) % n,
             });
-            let _ = idx;
         }
     }
     // Pairwise spline distances (minimum over samples).

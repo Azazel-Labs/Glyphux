@@ -617,7 +617,7 @@ pub(crate) fn endpoint_distance_pre(
 
 /// Finds the root of `f` in `(lo, hi)` given `f(lo) < 0 < f(hi)` and `f` increasing there:
 /// Newton steps safeguarded by bisection, starting from the secant estimate.
-#[inline(always)]
+#[cfg(test)]
 pub(crate) fn solve_increasing(
     f: &impl Fn(f64) -> f64,
     df: &impl Fn(f64) -> f64,
@@ -763,8 +763,8 @@ impl QuadData {
         }
     }
 
-    /// Nearest point with a warm start: like [`Self::signed_distance_newton`] but the Newton
-    /// iteration starts at `hint` (the parameter found at a nearby point), which typically
+    /// Nearest point with a warm start: like the cold-start Newton solve (kept in the tests as
+    /// a reference) but the iteration starts at `hint` (the parameter found at a nearby point), which typically
     /// converges in one or two steps. `hint` is updated.
     #[inline]
     pub(crate) fn signed_distance_warm(&self, pts: &[Vec2; 3], p: Vec2, hint: &mut f64) -> (SignedDistance, f64) {
@@ -841,7 +841,8 @@ impl QuadData {
     /// increasing zero crossings are bracketed using its critical points and then solved by
     /// safeguarded Newton iteration. Avoids the trigonometric cubic formula (several times
     /// faster) while being at least as accurate.
-    #[allow(dead_code)]
+    /// The cold-start Newton solve, a reference for the tests.
+    #[cfg(test)]
     pub(crate) fn signed_distance_newton(&self, pts: &[Vec2; 3], p: Vec2) -> (SignedDistance, f64) {
         let qa = pts[0] - p;
         // f(t) = d/dt |B(t)-p|^2 / 4 = ca t^3 + cb t^2 + cc t + cd
@@ -1077,14 +1078,6 @@ impl CubicData {
         let b = 3.0 * (p[2] - 2.0 * p[1] + p[0]);
         let c = p[3] - 3.0 * p[2] + 3.0 * p[1] - p[0];
         Self::build(Segment::Cubic(*p), p[0], a, b, c, p[3])
-    }
-
-    /// The same machinery for a quadratic curve (power basis with a zero cubic term).
-    #[allow(dead_code)]
-    pub(crate) fn from_quadratic(p: &[Vec2; 3]) -> Self {
-        let a = 2.0 * (p[1] - p[0]);
-        let b = p[0] - 2.0 * p[1] + p[2];
-        Self::build(Segment::Quadratic(*p), p[0], a, b, Vec2::ZERO, p[2])
     }
 
     fn build(seg: Segment, p0: Vec2, a: Vec2, b: Vec2, c: Vec2, p3: Vec2) -> Self {
@@ -1436,12 +1429,6 @@ impl CubicData {
             *hint = best_t;
             (SignedDistance::new(s * best.sqrt(), 0.0), best_t)
         }
-    }
-
-    /// Number of bracketing samples (for diagnostics).
-    #[allow(dead_code)]
-    pub(crate) fn sample_count(&self) -> usize {
-        self.n
     }
 }
 

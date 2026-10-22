@@ -556,12 +556,6 @@ impl<'a, const NC: usize, const TD: bool> Evaluator<'a, NC, TD> {
         self.tiled = true;
     }
 
-    /// Removes the tile restriction.
-    #[allow(dead_code)]
-    pub fn clear_tile(&mut self) {
-        self.tiled = false;
-    }
-
     /// Distances at `p`: `NC` channels then the true distance in slot 3 (when `TD`).
     #[inline]
     pub fn distance(&mut self, p: Vec2) -> Dist {

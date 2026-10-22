@@ -264,14 +264,9 @@ impl Shape {
     /// edges that meet at a perfect 180-degree cusp so nearest-edge selection is unambiguous.
     pub fn normalize(&mut self) {
         for c in &mut self.contours {
+            // Zero-length edges leave no gap: their endpoints coincide.
             if c.edges.len() > 1 {
-                let before = c.edges.len();
                 c.edges.retain(|e| !e.segment.is_degenerate());
-                if c.edges.is_empty() {
-                    c.edges.clear();
-                } else if c.edges.len() != before {
-                    // Re-close gaps left by removed (zero-length) edges: endpoints already coincide.
-                }
             }
         }
         self.contours
