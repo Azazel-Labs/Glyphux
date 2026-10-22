@@ -119,9 +119,9 @@ fn main() {
         fonts.push((font, *text, *size));
     }
     // Frames until the detail probes (on their worker thread) have reported and every glyph
-    // is at its final level.
+    // is at its final level; a few seconds at most.
     let mut quads = Vec::new();
-    for frame in 0.. {
+    for frame in 0..1000 {
         atlas.begin_frame();
         quads.clear();
         let mut y = 50.0;
@@ -153,6 +153,9 @@ fn main() {
                 st.generated, st.probes, st.probe_upgrades
             );
             break;
+        }
+        if frame == 999 {
+            eprintln!("warning: detail probes still pending; rendering anyway");
         }
         std::thread::sleep(std::time::Duration::from_millis(5));
     }

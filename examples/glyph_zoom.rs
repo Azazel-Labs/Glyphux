@@ -81,22 +81,36 @@ fn main() {
     let mut atlas = GlyphAtlas::new(&device, config).expect("atlas configuration");
     let mut renderer = TextRenderer::new(&device, format);
     let mut quads = Vec::new();
-    atlas.begin_frame();
-    layout_text(
-        &mut atlas,
-        &mut shaper,
-        &font,
-        &a[2],
-        &TextStyle::new(px(size), [1.0; 4]),
-        &Units::default(),
-        [size * 0.2, size * 1.0],
-        w as f32,
-        Align::Start,
-        None,
-        &mut quads,
-    );
+    // Frames until the detail probes (level 0 only) have reported and every glyph is at its
+    // final level; a few seconds at most.
+    for frame in 0..1000 {
+        atlas.begin_frame();
+        quads.clear();
+        layout_text(
+            &mut atlas,
+            &mut shaper,
+            &font,
+            &a[2],
+            &TextStyle::new(px(size), [1.0; 4]),
+            &Units::default(),
+            [size * 0.2, size * 1.0],
+            w as f32,
+            Align::Start,
+            None,
+            &mut quads,
+        );
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+        let generated = atlas.flush(&device, &mut enc);
+        queue.submit([enc.finish()]);
+        if generated == 0 && atlas.probes_pending() == 0 {
+            break;
+        }
+        if frame == 999 {
+            eprintln!("warning: detail probes still pending; rendering anyway");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
     let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
-    atlas.flush(&device, &mut enc);
     renderer.prepare(&device, &queue, &atlas, [w as f32, h as f32], &quads);
     {
         let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
