@@ -271,20 +271,32 @@ fn frame(s: &mut State, now: f64) {
         s.config.height = h;
         s.surface.configure(&s.device, &s.config);
     }
-    let (wgpu::CurrentSurfaceTexture::Success(tex) | wgpu::CurrentSurfaceTexture::Suboptimal(tex)) =
-        s.surface.get_current_texture()
-    else {
-        s.surface.configure(&s.device, &s.config);
-        return;
+    // A suboptimal texture is still drawn, then the surface is reconfigured for next time.
+    let (tex, suboptimal) = match s.surface.get_current_texture() {
+        wgpu::CurrentSurfaceTexture::Success(tex) => (tex, false),
+        wgpu::CurrentSurfaceTexture::Suboptimal(tex) => (tex, true),
+        wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
+            s.surface.configure(&s.device, &s.config);
+            return;
+        }
+        // Hidden, timed out or a reported error: skip the frame, try again on the next one.
+        wgpu::CurrentSurfaceTexture::Timeout
+        | wgpu::CurrentSurfaceTexture::Occluded
+        | wgpu::CurrentSurfaceTexture::Validation => return,
     };
     let view = tex.texture.create_view(&wgpu::TextureViewDescriptor {
         format: Some(s.config.format.add_srgb_suffix()),
         ..Default::default()
     });
-    let t = ((now - s.start) / 1000.0) as f32;
+    // Seconds as f32 lose precision as they grow (steps of 2 ms after 9 hours, of a frame
+    // after a few days): the clock restarts every 4.5 hours, a single jump in the animation.
+    let t = (((now - s.start) / 1000.0) % 16384.0) as f32;
     // Lay out in CSS pixels: the same scene on any display. The scale comes from the backing
     // store itself, so it always agrees with the size being rendered.
     s.scene.set_scale(w as f32 / s.canvas.client_width().max(1) as f32);
     s.scene.render(&s.device, &s.queue, &view, [w, h], t);
     s.queue.present(tex);
+    if suboptimal {
+        s.surface.configure(&s.device, &s.config);
+    }
 }
