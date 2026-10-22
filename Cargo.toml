@@ -30,6 +30,11 @@ panic = "abort"
 codegen-units = 1
 lto = "thin"
 
+# Release code with line tables, so profilers (samply: .vscode/profile.ps1) show function names.
+[profile.profiling]
+inherits = "release"
+debug = "line-tables-only"
+
 [workspace.lints.rust]
 rust_2018_idioms = { level = "warn", priority = -1 }
 unsafe_code = "forbid"

@@ -1,6 +1,7 @@
 //! Headless render of the demo scene to PNG files (and the atlas' first layer).
 //!
 //! usage: text_demo <font> [width] [height] [out_prefix] [frames]
+//! An out_prefix of "-" saves nothing (for profiling: PNG encoding would dominate).
 //! The other fonts in the font's folder are added as fallbacks (e.g. the web demo's assets,
 //! for the CJK and other scripts in the scene); one with "Variable" in its name animates the
 //! title's weight.
@@ -28,6 +29,7 @@ fn main() {
     };
     let (w, h) = (number(2, 1280), number(3, 720));
     let prefix = a.get(4).cloned().unwrap_or("demo".into());
+    let save = prefix != "-";
     let frames = number(5, 3);
     let (adapter, device, queue) = default_device().expect("device");
     println!("adapter: {:?}", adapter.get_info().name);
@@ -85,9 +87,15 @@ fn main() {
         scene.render(&device, &queue, &view, [w, h], t);
         device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
         let ms = start.elapsed().as_secs_f64() * 1e3;
-        let px = msdfr_gpu::read_texture_layer(&device, &queue, &target, 0);
-        let path = format!("{prefix}_{f}.png");
-        std::fs::write(&path, msdfr::io::png::encode_png(w, h, 4, &px)).unwrap();
+        let path = if save {
+            format!("{prefix}_{f}.png")
+        } else {
+            format!("frame {f}")
+        };
+        if save {
+            let px = msdfr_gpu::read_texture_layer(&device, &queue, &target, 0);
+            std::fs::write(&path, msdfr::io::png::encode_png(w, h, 4, &px)).unwrap();
+        }
         let st = scene.atlas.stats();
         println!(
             "{path}: {:.1} ms wall, CPU {:.2} ms, generated {} glyphs ({} total, {} texels, {} probes, {} upgrades) | GPU (previous frame) {}",
@@ -105,6 +113,9 @@ fn main() {
                 .collect::<Vec<_>>()
                 .join(", ")
         );
+    }
+    if !save {
+        return;
     }
     let size = scene.atlas.config().size;
     let px = msdfr_gpu::read_texture_layer(&device, &queue, scene.atlas.texture(), 0);

@@ -92,6 +92,14 @@
       ],
       "problemMatcher": ["$rustc"]
     },
+    {
+      "label": "profile: text_demo (samply)",
+      "detail": "Profiles 600 frames of the demo scene with samply and opens the Firefox Profiler (Windows; run .vscode/samply-setup.ps1 once first)",
+      "type": "process",
+      "command": "powershell.exe",
+      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/.vscode/profile.ps1"],
+      "problemMatcher": ["$rustc"]
+    },
 
     // ── Web demo (wasm32; needs wasm-bindgen-cli) ───────────────────────────────────────
     // Cargo runs inside web-demo/ so its .cargo/config.toml (wasm32 target) applies.
