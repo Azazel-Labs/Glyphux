@@ -61,7 +61,9 @@ pub use render::{rasterize, render_sdf, render_sdf_multi};
 pub use shape::{Bounds, Contour, FillRule, Shape, ShapeError};
 pub use transform::{DistanceMapping, Projection, Range, Transform};
 
-/// Applies error correction to an MSDF/MTSDF that was generated with correction disabled.
+/// Applies `config`'s error correction to an MSDF/MTSDF that was generated with correction
+/// disabled, with `config.threads` threads (0 = automatic, as for generation). Returns the
+/// number of texels corrected.
 pub fn msdf_error_correction<const N: usize>(
     sdf: &mut Bitmap<N>,
     shape: &Shape,
@@ -69,12 +71,13 @@ pub fn msdf_error_correction<const N: usize>(
     config: &GeneratorConfig,
 ) -> usize {
     let ps = PreparedShape::new(shape);
+    let threads = generate::correction_threads(sdf, config);
     correction::correct_msdf(
         sdf,
         &ps,
         transform,
         &config.error_correction,
         config.overlap_support,
-        config.threads.max(1),
+        threads,
     )
 }

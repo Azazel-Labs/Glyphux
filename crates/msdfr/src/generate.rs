@@ -282,13 +282,21 @@ fn post_process<const N: usize>(
             ec.distance_check = DistanceCheckMode::DoNotCheck;
         }
     }
-    // Error correction costs roughly the same per texel regardless of the shape.
-    let threads = resolve_threads(
-        config.threads,
-        out.height() as usize,
-        (out.width() * out.height()) as usize * 20,
+    correct_msdf(
+        out,
+        ps,
+        transform,
+        &ec,
+        config.overlap_support,
+        correction_threads(out, config),
     );
-    correct_msdf(out, ps, transform, &ec, config.overlap_support, threads);
+}
+
+/// Threads for error correction of `out` (`config.threads`, 0 = automatic).
+pub(crate) fn correction_threads<const N: usize>(out: &Bitmap<N>, config: &GeneratorConfig) -> usize {
+    // Error correction costs roughly the same per texel regardless of the shape.
+    let texels = out.width() as usize * out.height() as usize;
+    resolve_threads(config.threads, out.height() as usize, texels * 20)
 }
 
 /// Fixes the sign of each texel according to `fill_rule` evaluated with exact scanline
