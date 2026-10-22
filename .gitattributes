@@ -1,0 +1,25 @@
+# Normalize every text file to LF in the repository and in working trees, on every OS.
+* text=auto eol=lf
+
+*.rs     text eol=lf diff=rust
+*.toml   text eol=lf
+*.wgsl   text eol=lf
+*.md     text eol=lf diff=markdown
+*.py     text eol=lf diff=python
+*.sh     text eol=lf
+*.json   text eol=lf
+*.html   text eol=lf diff=html
+*.cpp    text eol=lf diff=cpp
+*.tsv    text eol=lf
+
+# Binary assets: never touch line endings, no textual diffs.
+*.png    binary
+*.jpg    binary
+*.ico    binary
+*.ttf    binary
+*.otf    binary
+*.woff   binary
+*.woff2  binary
+*.wasm   binary
+*.zip    binary
+*.pdf    binary

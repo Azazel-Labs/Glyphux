@@ -1,0 +1,26 @@
+[package]
+name = "msdfr-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Command line tools for msdfr: msdfr (single shapes, msdfgen compatible) and msdfr-atlas (font atlases, msdf-atlas-gen compatible)"
+keywords = ["msdf", "sdf", "font", "atlas", "cli"]
+categories = ["command-line-utilities", "graphics"]
+
+[dependencies]
+msdfr = { workspace = true, features = ["font"] }
+msdfr-atlas.workspace = true
+clap.workspace = true
+
+[[bin]]
+name = "msdfr"
+path = "src/bin/msdfr.rs"
+
+[[bin]]
+name = "msdfr-atlas"
+path = "src/bin/msdfr-atlas.rs"
+
+[lints]
+workspace = true

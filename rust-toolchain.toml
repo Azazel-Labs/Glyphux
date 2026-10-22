@@ -1,0 +1,5 @@
+# Latest stable with the tools the editor setup uses (rust-analyzer needs rust-src).
+# The web demo has its own file that also adds the wasm32 target.
+[toolchain]
+channel = "stable"
+components = ["rustfmt", "clippy", "rust-src"]

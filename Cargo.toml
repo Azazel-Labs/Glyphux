@@ -1,0 +1,73 @@
+[workspace]
+resolver = "3"
+members = ["crates/msdfr", "crates/msdfr-atlas", "crates/msdfr-cli", "crates/msdfr-gpu", "examples"]
+# wasm32-only (its .cargo/config.toml sets the target), so it is its own workspace.
+exclude = ["examples/web-demo"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+repository = "https://github.com/Azazel-Labs/Glyst"
+
+[workspace.dependencies]
+msdfr = { path = "crates/msdfr", version = "0.1.0" }
+msdfr-atlas = { path = "crates/msdfr-atlas", version = "0.1.0" }
+msdfr-gpu = { path = "crates/msdfr-gpu", version = "0.1.0" }
+bytemuck = { version = "1.25", default-features = false, features = ["derive"] }
+# naga must stay on the version wgpu uses (msdfr-gpu validates its shaders with it).
+wgpu = { version = "30.0.1", default-features = false, features = ["std", "wgsl"] }
+naga = { version = "30.0.1", features = ["wgsl-in"] }
+clap = { version = "4.6", default-features = false, features = ["std", "help", "usage", "error-context", "suggestions", "derive"] }
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+panic = "abort"
+
+[profile.bench]
+codegen-units = 1
+lto = "thin"
+
+[workspace.lints.rust]
+rust_2018_idioms = { level = "warn", priority = -1 }
+unsafe_code = "forbid"
+unused_qualifications = "warn"
+unused_lifetimes = "warn"
+trivial_numeric_casts = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+# Restriction lints worth having.
+dbg_macro = "warn"
+todo = "warn"
+# Geometry / raster code: casts between pixel indices and coordinates are the norm, and
+# short math names (x, y, t, a, b) are clearer than long ones.
+cast_lossless = "allow"
+cast_possible_truncation = "allow"
+cast_possible_wrap = "allow"
+cast_precision_loss = "allow"
+cast_sign_loss = "allow"
+float_cmp = "allow"
+many_single_char_names = "allow"
+similar_names = "allow"
+suboptimal_flops = "allow"
+unreadable_literal = "allow"
+# Documentation and API style choices.
+doc_markdown = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+too_many_arguments = "allow"
+too_many_lines = "allow"
+items_after_statements = "allow"
+return_self_not_must_use = "allow"
+struct_excessive_bools = "allow"
+# Deliberate in the hot paths: forced inlining and branchless boolean arithmetic (`&`, `|`)
+# that the optimizer vectorizes; `_pad` fields mirror WGSL struct layouts.
+inline_always = "allow"
+needless_bitwise_bool = "allow"
+pub_underscore_fields = "allow"

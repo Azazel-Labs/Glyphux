@@ -1,0 +1,31 @@
+[package]
+name = "msdfr-examples"
+description = "Runnable demos of msdfr and msdfr-gpu (cargo run --release --bin <name>)"
+version.workspace = true
+edition.workspace = true
+rust-version = "1.93"
+license.workspace = true
+publish = false
+
+[dependencies]
+msdfr.workspace = true
+msdfr-gpu = { workspace = true, features = ["demo"] }
+
+[[bin]]
+name = "glyph"
+path = "glyph.rs"
+
+[[bin]]
+name = "text_demo"
+path = "text_demo.rs"
+
+[[bin]]
+name = "glyph_zoom"
+path = "glyph_zoom.rs"
+
+[[bin]]
+name = "shaping_demo"
+path = "shaping_demo.rs"
+
+[lints]
+workspace = true

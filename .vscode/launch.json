@@ -1,0 +1,74 @@
+{
+  // Debugging with CodeLLDB (vadimcn.vscode-lldb). Each entry builds the target first.
+  "version": "0.2.0",
+  "inputs": [
+    {
+      "id": "font",
+      "type": "promptString",
+      "description": "Path to a .ttf / .otf font",
+      "default": "${workspaceFolder}/examples/web-demo/assets/Inter-Regular.otf"
+    },
+    {
+      "id": "char",
+      "type": "promptString",
+      "description": "Character",
+      "default": "A"
+    }
+  ],
+  "configurations": [
+    {
+      "name": "example: glyph (MSDF of one character)",
+      "type": "lldb",
+      "request": "launch",
+      "cargo": {
+        "args": ["build", "--bin", "glyph"],
+        "filter": { "name": "glyph", "kind": "bin" }
+      },
+      "args": ["${input:font}", "${input:char}", "${workspaceFolder}/target/glyph.png"],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "msdfr-cli: msdfr (glyph to PNG)",
+      "type": "lldb",
+      "request": "launch",
+      "cargo": {
+        "args": ["build", "-p", "msdfr-cli", "--bin", "msdfr"],
+        "filter": { "name": "msdfr", "kind": "bin" }
+      },
+      "args": ["msdf", "-font", "${input:font}", "${input:char}", "-o", "${workspaceFolder}/target/msdfr.png", "-size", "64", "64", "-autoframe"],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "msdfr: unit tests",
+      "type": "lldb",
+      "request": "launch",
+      "cargo": {
+        "args": ["test", "--no-run", "-p", "msdfr", "--lib"],
+        "filter": { "name": "msdfr", "kind": "lib" }
+      },
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "example: text_demo",
+      "type": "lldb",
+      "request": "launch",
+      "cargo": {
+        "args": ["build", "--bin", "text_demo"],
+        "filter": { "name": "text_demo", "kind": "bin" }
+      },
+      "args": ["${input:font}", "1280", "720", "${workspaceFolder}/target/text_demo", "3"],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "msdfr-gpu: parity tests (incl. whole font)",
+      "type": "lldb",
+      "request": "launch",
+      "cargo": {
+        "args": ["test", "--no-run", "-p", "msdfr-gpu", "--test", "parity"],
+        "filter": { "name": "parity", "kind": "test" }
+      },
+      "args": ["--include-ignored"],
+      "cwd": "${workspaceFolder}"
+    }
+  ]
+}

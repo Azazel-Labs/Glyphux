@@ -1,0 +1,70 @@
+[package]
+name = "msdfr-gpu-web-demo"
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "MIT"
+description = "Browser (WebGPU) demo of msdfr-gpu: glyph fields generated on the GPU every frame as needed"
+
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+msdfr-gpu = { path = "../../crates/msdfr-gpu", default-features = false, features = ["demo"] }
+# WebGPU only: the generator is compute shaders, which WebGL 2 lacks.
+wgpu = { version = "30.0.1", default-features = false, features = ["std", "wgsl", "webgpu"] }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlCanvasElement", "Performance", "console"] }
+
+# Same lint set as the root workspace (a separate workspace cannot inherit it).
+[lints.rust]
+rust_2018_idioms = { level = "warn", priority = -1 }
+unsafe_code = "forbid"
+unused_qualifications = "warn"
+unused_lifetimes = "warn"
+trivial_numeric_casts = "warn"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+# Restriction lints worth having.
+dbg_macro = "warn"
+todo = "warn"
+# Geometry / raster code: casts between pixel indices and coordinates are the norm, and
+# short math names (x, y, t, a, b) are clearer than long ones.
+cast_lossless = "allow"
+cast_possible_truncation = "allow"
+cast_possible_wrap = "allow"
+cast_precision_loss = "allow"
+cast_sign_loss = "allow"
+float_cmp = "allow"
+many_single_char_names = "allow"
+similar_names = "allow"
+suboptimal_flops = "allow"
+unreadable_literal = "allow"
+# Documentation and API style choices.
+doc_markdown = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+too_many_arguments = "allow"
+too_many_lines = "allow"
+items_after_statements = "allow"
+return_self_not_must_use = "allow"
+struct_excessive_bools = "allow"
+# Deliberate in the hot paths: forced inlining and branchless boolean arithmetic (`&`, `|`)
+# that the optimizer vectorizes; `_pad` fields mirror WGSL struct layouts.
+inline_always = "allow"
+needless_bitwise_bool = "allow"
+pub_underscore_fields = "allow"
+
+# Speed first: glyph preparation and detail probes run on the page's only thread.
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"

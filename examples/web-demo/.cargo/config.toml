@@ -1,0 +1,7 @@
+# The demo only runs in a browser: build (and let rust-analyzer check) for wasm by default.
+[build]
+target = "wasm32-unknown-unknown"
+
+# 128-bit SIMD (every browser with WebGPU has it): msdfr's distance loops autovectorize.
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "target-feature=+simd128"]

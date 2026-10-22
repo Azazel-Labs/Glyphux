@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>msdfr-gpu</title>
+  <link rel="icon" href="data:,">
+  <style>
+    html, body { margin: 0; height: 100%; background: #14161c; color: #9a9ca3; font: 14px system-ui, sans-serif; }
+    canvas { display: block; width: 100vw; height: 100vh; }
+    #status { position: fixed; left: 16px; bottom: 16px; }
+    #panel {
+      position: fixed; right: 16px; bottom: 16px; width: min(360px, calc(100vw - 32px));
+      display: grid; gap: 8px; padding: 12px; border-radius: 10px;
+      background: rgba(28, 31, 39, 0.88); border: 1px solid #2a2e38; backdrop-filter: blur(6px);
+    }
+    #panel label { display: grid; gap: 4px; font-size: 12px; }
+    #panel input, #panel select, #panel button {
+      font: inherit; color: #e8e6e3; background: #1c1f27; border: 1px solid #343946;
+      border-radius: 6px; padding: 6px 8px; min-width: 0;
+    }
+    #panel label.check { display: flex; align-items: center; gap: 6px; }
+    #note { font-size: 12px; }
+    #note:empty { display: none; }
+  </style>
+</head>
+<body>
+  <canvas id="msdfr"></canvas>
+  <div id="status">Loading… (needs a browser with WebGPU)</div>
+  <div id="panel" hidden>
+    <label>Text on the spline
+      <input id="text" value="Hello, 世界! Type something · 日本語 · 한국어 · العربية" spellcheck="false">
+    </label>
+    <label>Font
+      <select id="font">
+        <optgroup label="Bundled" id="bundled"></optgroup>
+        <optgroup label="Your system" id="system">
+          <option value="system:" id="system-fonts" hidden>Installed fonts… (asks for access)</option>
+        </optgroup>
+        <option value="file:">Open font file…</option>
+      </select>
+    </label>
+    <label class="check"><input id="atlas" type="checkbox"> Show the atlas pages</label>
+    <input id="file" type="file" accept=".ttf,.otf,.ttc,.otc" hidden>
+    <div id="note"></div>
+  </div>
+  <script type="module">
+    // Keep the canvas backing store at its CSS size times the device pixel ratio; the demo
+    // follows it every frame.
+    const canvas = document.getElementById("msdfr");
+    const fit = () => {
+      const r = window.devicePixelRatio || 1;
+      canvas.width = Math.max(1, Math.round(canvas.clientWidth * r));
+      canvas.height = Math.max(1, Math.round(canvas.clientHeight * r));
+    };
+    fit();
+    new ResizeObserver(fit).observe(canvas);
+    if (!navigator.gpu) {
+      document.getElementById("status").textContent = "This demo needs WebGPU (Chrome/Edge 113+, Safari 26+, Firefox 141+ on Windows).";
+    } else {
+      const demo = await import("./pkg/msdfr_gpu_web_demo.js");
+      await demo.default();
+      setup(demo);
+    }
+
+    function setup(demo) {
+      const $ = (id) => document.getElementById(id);
+      const note = (s) => { $("note").textContent = s; };
+      const select = $("font");
+      const option = (group, value, label) => {
+        const o = document.createElement("option");
+        o.value = value;
+        o.textContent = label;
+        $(group).append(o);
+        return o;
+      };
+      $("panel").hidden = false;
+
+      $("text").addEventListener("input", (e) => demo.set_text(e.target.value));
+      $("atlas").addEventListener("change", (e) => demo.set_show_atlas(e.target.checked));
+
+      // Inter's variable font (ASCII subset) for the title's breathing weight.
+      fetch("assets/InterVariable-Latin.ttf")
+        .then((r) => r.ok ? r.arrayBuffer() : Promise.reject(r.statusText))
+        .then((b) => demo.set_weight_font(new Uint8Array(b)))
+        .catch((e) => console.warn(`InterVariable: ${e}`));
+
+      // Inter is built in; the Noto subsets cover the scene's CJK, Arabic, Devanagari and
+      // Thai lines and are added as fallbacks in this order.
+      option("bundled", "Inter", "Inter");
+      const bundled = ["JP", "SC", "KR", "Arabic", "Devanagari", "Thai"];
+      for (const s of bundled) {
+        const name = `Noto Sans ${s}`;
+        option("bundled", name, `${name} (subset)`);
+        fetch(`assets/NotoSans${s}-Subset.ttf`)
+          .then((r) => r.ok ? r.arrayBuffer() : Promise.reject(r.statusText))
+          .then((b) => demo.add_font(name, new Uint8Array(b)))
+          .catch((e) => console.warn(`${name}: ${e}`));
+      }
+
+      select.value = "Inter";
+      note("queryLocalFonts" in window
+        ? "The bundled CJK fonts only hold the demo's own characters: for anything you type, pick an installed font."
+        : "The bundled CJK fonts only hold the demo's own characters: for anything you type, open a font file.");
+
+      // Fonts loaded from the system or a file, by the name they were added under.
+      const loaded = new Set(["Inter", ...bundled.map((s) => `Noto Sans ${s}`)]);
+      const systemFonts = new Map();
+      // The selected option's value (what the dropdown returns to after a failed load).
+      let current = "Inter";
+
+      // Makes the font added as `name` primary, loading it first if needed; `value` is its
+      // option in the dropdown.
+      const use = async (name, value, load) => {
+        if (!loaded.has(name)) {
+          note(`Loading ${name}…`);
+          try {
+            await load();
+          } catch (e) {
+            note(`${name}: ${e.message ?? e}`);
+            select.value = current;
+            return;
+          }
+          loaded.add(name);
+        }
+        demo.set_primary_font(name);
+        current = value;
+        select.value = value;
+        note("");
+      };
+
+      // Local Font Access (Chrome / Edge): every installed font, including CJK system fonts.
+      // The permission prompt can make the dropdown fire again, so this lists only once (and
+      // can be retried after a refusal).
+      $("system-fonts").hidden = !("queryLocalFonts" in window);
+      let listing = null;
+      const listSystemFonts = () => listing ??= (async () => {
+        select.value = current;
+        try {
+          const fonts = await window.queryLocalFonts();
+          for (const f of fonts.sort((a, b) => a.fullName.localeCompare(b.fullName))) {
+            if (!systemFonts.has(f.fullName)) {
+              systemFonts.set(f.fullName, f);
+              option("system", `system:${f.fullName}`, f.fullName);
+            }
+          }
+          $("system-fonts")?.remove();
+          note(`${systemFonts.size} installed fonts added to the list (CJK: e.g. Microsoft YaHei, Yu Gothic, Malgun Gothic).`);
+        } catch (e) {
+          listing = null;
+          note(`No access to installed fonts: ${e.message ?? e}`);
+        }
+      })();
+
+      select.addEventListener("change", () => {
+        const v = select.value;
+        if (v === "system:") {
+          listSystemFonts();
+        } else if (v === "file:") {
+          select.value = current;
+          $("file").click();
+        } else if (v.startsWith("file:")) {
+          use(v.slice(5), v, async () => {});
+        } else if (v.startsWith("system:")) {
+          const f = systemFonts.get(v.slice(7));
+          use(f.fullName, v, async () => {
+            const data = new Uint8Array(await (await f.blob()).arrayBuffer());
+            demo.add_font(f.fullName, data, f.postscriptName);
+          });
+        } else {
+          use(v, v, async () => {});
+        }
+      });
+
+      $("file").addEventListener("change", () => {
+        const file = $("file").files[0];
+        if (!file) return;
+        const value = `file:${file.name}`;
+        use(file.name, value, async () => {
+          demo.add_font(file.name, new Uint8Array(await file.arrayBuffer()));
+          if (![...select.options].some((o) => o.value === value)) {
+            option("system", value, file.name);
+          }
+        });
+        $("file").value = "";
+      });
+    }
+  </script>
+</body>
+</html>

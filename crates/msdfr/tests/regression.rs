@@ -1,0 +1,223 @@
+//! Slow regression checks over a whole font, run on demand:
+//! `cargo test --release -p msdfr --test regression -- --ignored`
+//!
+//! `MSDFR_TEST_FONT` picks the font (default: the Inter font of the web demo).
+use std::fmt::Write;
+
+use msdfr::io::font::{Font, FontScaling};
+use msdfr::{
+    Bitmap, DEFAULT_ANGLE_THRESHOLD, DistanceCheckMode, ErrorCorrectionConfig, ErrorCorrectionMode, GeneratorConfig,
+    Projection, Range, Segment, Shape, Transform, Vec2, debug_cubic_distance, edge_coloring_simple, generate_msdf,
+    generate_mtsdf, generate_psdf, generate_sdf,
+};
+
+const DEFAULT_FONT: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../examples/web-demo/assets/Inter-Regular.otf"
+);
+const GOLDEN: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fingerprint.txt");
+
+fn font_data() -> Vec<u8> {
+    let path = std::env::var("MSDFR_TEST_FONT").unwrap_or(DEFAULT_FONT.into());
+    std::fs::read(&path).unwrap_or_else(|e| panic!("{path}: {e}"))
+}
+
+fn ascii_shapes(font: &Font<'_>) -> Vec<Shape> {
+    let mut shapes = Vec::new();
+    for c in 33u8..127 {
+        if let Ok(g) = font.glyph(c as char) {
+            let mut s = g.shape;
+            if s.contours.is_empty() {
+                continue;
+            }
+            s.normalize();
+            edge_coloring_simple(&mut s, DEFAULT_ANGLE_THRESHOLD, 0);
+            shapes.push(s);
+        }
+    }
+    shapes
+}
+
+fn fnv(h: &mut u64, data: &[f32]) {
+    for v in data {
+        for b in v.to_bits().to_le_bytes() {
+            *h ^= b as u64;
+            *h = h.wrapping_mul(0x100000001b3);
+        }
+    }
+}
+
+/// Hashes the exact output bits of 54 generator configurations over the font's printable ASCII
+/// glyphs and compares them with `tests/fingerprint.txt`, so optimizations provably don't change
+/// results. Set `MSDFR_BLESS=1` to rewrite the file after an intended change. Hashes can differ
+/// between platforms (libm), so bless on the platform you compare on.
+#[test]
+#[ignore = "slow; run with --release -- --ignored"]
+fn fingerprint() {
+    let ecs: [(&str, ErrorCorrectionConfig); 6] = [
+        ("off", ErrorCorrectionConfig::DISABLED),
+        ("edge-auto", ErrorCorrectionConfig::default()),
+        (
+            "edge-fast",
+            ErrorCorrectionConfig {
+                distance_check: DistanceCheckMode::DoNotCheck,
+                ..Default::default()
+            },
+        ),
+        (
+            "edge-full",
+            ErrorCorrectionConfig {
+                distance_check: DistanceCheckMode::AlwaysCheck,
+                ..Default::default()
+            },
+        ),
+        (
+            "indisc-auto",
+            ErrorCorrectionConfig {
+                mode: ErrorCorrectionMode::Indiscriminate,
+                ..Default::default()
+            },
+        ),
+        (
+            "edgeonly",
+            ErrorCorrectionConfig {
+                mode: ErrorCorrectionMode::EdgeOnly,
+                ..Default::default()
+            },
+        ),
+    ];
+    let data = font_data();
+    let font = Font::from_bytes(&data, 0, FontScaling::EmNormalized).unwrap();
+    let shapes = ascii_shapes(&font);
+    let mut out = String::new();
+    for &(size, px_range) in &[(16u32, 2.0f64), (32, 4.0), (47, 8.0)] {
+        let xfs: Vec<Transform> = shapes
+            .iter()
+            .map(|s| {
+                let b = s.bounds();
+                let (w, h) = (b.width(), b.height());
+                let frame = size as f64 - px_range;
+                let scale = frame / w.max(h);
+                let tr = Vec2::new(
+                    -b.left + (frame / scale - w) / 2.0 + 0.5 * px_range / scale,
+                    -b.bottom + (frame / scale - h) / 2.0 + 0.5 * px_range / scale,
+                );
+                Transform::new(Projection::uniform(scale, tr), Range::symmetric(px_range / scale))
+            })
+            .collect();
+        for overlap in [true, false] {
+            let base = GeneratorConfig::default().with_threads(1).with_overlap_support(overlap);
+            let mut hs = [0xcbf29ce484222325u64; 3];
+            for (i, s) in shapes.iter().enumerate() {
+                let cfg = base.with_error_correction(ErrorCorrectionConfig::DISABLED);
+                let mut b = Bitmap::<1>::new(size, size);
+                generate_sdf(&mut b, s, &xfs[i], &cfg);
+                fnv(&mut hs[0], b.data());
+                let mut b = Bitmap::<1>::new(size, size);
+                generate_psdf(&mut b, s, &xfs[i], &cfg);
+                fnv(&mut hs[1], b.data());
+                let mut b = Bitmap::<4>::new(size, size);
+                generate_mtsdf(&mut b, s, &xfs[i], &cfg);
+                fnv(&mut hs[2], b.data());
+            }
+            for (name, h) in ["sdf", "psdf", "mtsdf-noec"].iter().zip(hs) {
+                writeln!(out, "{size} ov={overlap} {name} {h:016x}").unwrap();
+            }
+            for (ecn, ec) in &ecs {
+                let cfg = base.with_error_correction(*ec);
+                let mut h = 0xcbf29ce484222325u64;
+                for (i, s) in shapes.iter().enumerate() {
+                    let mut b = Bitmap::<3>::new(size, size);
+                    generate_msdf(&mut b, s, &xfs[i], &cfg);
+                    fnv(&mut h, b.data());
+                }
+                writeln!(out, "{size} ov={overlap} msdf {ecn} {h:016x}").unwrap();
+            }
+        }
+    }
+    if std::env::var("MSDFR_BLESS").is_ok() {
+        std::fs::write(GOLDEN, &out).unwrap();
+        return;
+    }
+    let golden = std::fs::read_to_string(GOLDEN).expect("tests/fingerprint.txt missing; run once with MSDFR_BLESS=1");
+    let changed: Vec<&str> = out.lines().filter(|l| !golden.lines().any(|g| g == *l)).collect();
+    assert!(
+        changed.is_empty(),
+        "outputs changed (MSDFR_BLESS=1 to accept):\n{}",
+        changed.join("\n")
+    );
+}
+
+fn brute(pts: [Vec2; 4], p: Vec2) -> f64 {
+    let seg = Segment::Cubic(pts);
+    let g = |t: f64| (seg.point(t) - p).length_squared();
+    let n = 4000;
+    let (mut best, mut best_t) = (f64::MAX, 0.0);
+    for i in 0..=n {
+        let t = i as f64 / n as f64;
+        if g(t) < best {
+            (best, best_t) = (g(t), t);
+        }
+    }
+    // Golden-section refinement around the best sample.
+    let (mut a, mut b) = ((best_t - 1.0 / n as f64).max(0.0), (best_t + 1.0 / n as f64).min(1.0));
+    for _ in 0..100 {
+        let m1 = a + (b - a) * 0.381966;
+        let m2 = a + (b - a) * 0.618034;
+        if g(m1) < g(m2) {
+            b = m2;
+        } else {
+            a = m1;
+        }
+    }
+    g(f64::midpoint(a, b)).min(best).sqrt()
+}
+
+/// The exact cubic nearest-point kernel is never farther than brute force, on a grid of points
+/// around every cubic edge of the font's printable ASCII glyphs (CFF fonts have cubics).
+#[test]
+#[ignore = "slow; run with --release -- --ignored"]
+fn cubic_kernel_matches_brute_force() {
+    let data = font_data();
+    let font = Font::from_bytes(&data, 0, FontScaling::EmNormalized).unwrap();
+    let (mut checked, mut bad) = (0u64, Vec::new());
+    for c in 33u8..127 {
+        let Ok(g) = font.glyph(c as char) else {
+            continue;
+        };
+        let b = g.shape.bounds();
+        if b.is_empty() {
+            continue;
+        }
+        let pad = 0.05;
+        for e in g.shape.contours.iter().flat_map(|c| &c.edges) {
+            let Segment::Cubic(pts) = e.segment else {
+                continue;
+            };
+            let mut hint = -1.0;
+            let steps = 16;
+            for iy in 0..=steps {
+                for ix in 0..=steps {
+                    let p = Vec2::new(
+                        b.left - pad + (b.width() + 2.0 * pad) * ix as f64 / steps as f64,
+                        b.bottom - pad + (b.height() + 2.0 * pad) * iy as f64 / steps as f64,
+                    );
+                    let (d, _) = debug_cubic_distance(pts, p, &mut hint);
+                    let bd = brute(pts, p);
+                    checked += 1;
+                    if d.abs() > bd + 1e-9 {
+                        bad.push(format!("{:?} p={p:?}: kernel {} brute {bd}", c as char, d.abs()));
+                    }
+                }
+            }
+        }
+    }
+    assert!(checked > 0, "the font has no cubic edges");
+    let shown = bad.len().min(10);
+    assert!(
+        bad.is_empty(),
+        "{} of {checked} queries worse than brute force:\n{}",
+        bad.len(),
+        bad[..shown].join("\n")
+    );
+}

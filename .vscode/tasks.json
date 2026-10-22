@@ -1,0 +1,196 @@
+{
+  "version": "2.0.0",
+  "inputs": [
+    {
+      "id": "font",
+      "type": "promptString",
+      "description": "Path to a .ttf / .otf font",
+      "default": "${workspaceFolder}/examples/web-demo/assets/Inter-Regular.otf"
+    }
+  ],
+  "tasks": [
+    // ── Workspace (crates/ and examples/) ───────────────────────────────────────────────
+    {
+      "label": "check: all (clippy)",
+      "group": { "kind": "build", "isDefault": true },
+      "dependsOrder": "sequence",
+      "dependsOn": ["clippy: workspace", "clippy: web demo"],
+      "problemMatcher": []
+    },
+    {
+      "label": "clippy: workspace",
+      "type": "process",
+      "command": "cargo",
+      "args": ["clippy", "--workspace", "--all-targets", "--all-features"],
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "test: all",
+      "detail": "Unit, integration, parity and naga shader tests (release)",
+      "type": "process",
+      "command": "cargo",
+      "args": ["test", "--workspace", "--release"],
+      "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "test: slow (regression, whole-font GPU parity)",
+      "detail": "The #[ignore]d tests: output fingerprint, cubic kernel vs brute force, GPU vs CPU over a font",
+      "type": "process",
+      "command": "cargo",
+      "args": ["test", "--workspace", "--release", "--", "--ignored"],
+      "group": "test",
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "bench",
+      "detail": "Distance fields for the ASCII glyphs of Inter in every mode (crates/msdfr/benches)",
+      "type": "process",
+      "command": "cargo",
+      "args": ["bench", "-p", "msdfr"],
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "fmt: all",
+      "dependsOrder": "sequence",
+      "dependsOn": ["fmt: workspace", "fmt: web demo"],
+      "problemMatcher": []
+    },
+    {
+      "label": "fmt: workspace",
+      "type": "process",
+      "command": "cargo",
+      "args": ["fmt", "--all"],
+      "problemMatcher": []
+    },
+    {
+      "label": "fmt: web demo",
+      "type": "process",
+      "command": "cargo",
+      "args": ["fmt"],
+      "options": { "cwd": "${workspaceFolder}/examples/web-demo" },
+      "problemMatcher": []
+    },
+    {
+      "label": "build: CLIs (release)",
+      "type": "process",
+      "command": "cargo",
+      "args": ["build", "--release", "-p", "msdfr-cli"],
+      "group": "build",
+      "problemMatcher": ["$rustc"]
+    },
+
+    // ── Examples (examples/*.rs) ────────────────────────────────────────────────────────
+    {
+      "label": "run: text_demo",
+      "detail": "Renders 3 frames of the demo scene to target/text_demo_*.png",
+      "type": "process",
+      "command": "cargo",
+      "args": [
+        "run", "--release", "--bin", "text_demo", "--",
+        "${input:font}", "1280", "720", "${workspaceFolder}/target/text_demo", "3"
+      ],
+      "problemMatcher": ["$rustc"]
+    },
+
+    // ── Web demo (wasm32; needs wasm-bindgen-cli) ───────────────────────────────────────
+    // Cargo runs inside web-demo/ so its .cargo/config.toml (wasm32 target) applies.
+    {
+      "label": "web demo",
+      "detail": "Build, serve on http://127.0.0.1:8000 and open it in the browser",
+      "type": "shell",
+      "command": "xdg-open http://127.0.0.1:8000",
+      "osx": { "command": "open http://127.0.0.1:8000" },
+      "windows": { "command": "explorer.exe http://127.0.0.1:8000" },
+      "dependsOn": ["serve: web demo"],
+      "presentation": { "reveal": "silent" },
+      "problemMatcher": []
+    },
+    {
+      "label": "clippy: web demo",
+      "type": "process",
+      "command": "cargo",
+      "args": ["clippy"],
+      "options": { "cwd": "${workspaceFolder}/examples/web-demo" },
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "build: web demo",
+      "detail": "cargo build + wasm-bindgen into web-demo/pkg (+ wasm-opt -O3 if it is installed)",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "web demo: install wasm-bindgen", "web demo: cargo build", "web demo: wasm-bindgen", "web demo: wasm-opt"
+      ],
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "web demo: wasm-bindgen",
+      "type": "process",
+      "command": "wasm-bindgen",
+      "args": [
+        "--target", "web", "--no-typescript", "--out-dir", "pkg",
+        "target/wasm32-unknown-unknown/release/msdfr_gpu_web_demo.wasm"
+      ],
+      "options": { "cwd": "${workspaceFolder}/examples/web-demo" },
+      "problemMatcher": []
+    },
+    {
+      // Binaryen's optimizer on top of LLVM's (smaller, slightly faster); skipped without it.
+      "label": "web demo: wasm-opt",
+      "type": "shell",
+      "options": { "cwd": "${workspaceFolder}/examples/web-demo" },
+      "command": "if command -v wasm-opt >/dev/null; then wasm-opt -O3 --enable-simd --enable-bulk-memory --enable-nontrapping-float-to-int --enable-sign-ext --enable-mutable-globals --enable-reference-types --enable-multivalue pkg/msdfr_gpu_web_demo_bg.wasm -o pkg/msdfr_gpu_web_demo_bg.wasm; else echo 'wasm-opt not installed (binaryen): skipped'; fi",
+      "windows": {
+        "options": {
+          "cwd": "${workspaceFolder}/examples/web-demo",
+          "shell": { "executable": "powershell.exe", "args": ["-NoProfile", "-Command"] }
+        },
+        "command": "if (Get-Command wasm-opt -ErrorAction SilentlyContinue) { wasm-opt -O3 --enable-simd --enable-bulk-memory --enable-nontrapping-float-to-int --enable-sign-ext --enable-mutable-globals --enable-reference-types --enable-multivalue pkg/msdfr_gpu_web_demo_bg.wasm -o pkg/msdfr_gpu_web_demo_bg.wasm; exit $LASTEXITCODE } else { 'wasm-opt not installed (binaryen): skipped' }"
+      },
+      "presentation": { "reveal": "silent" },
+      "problemMatcher": []
+    },
+    {
+      "label": "web demo: cargo build",
+      "type": "process",
+      "command": "cargo",
+      "args": ["build", "--release"],
+      "options": { "cwd": "${workspaceFolder}/examples/web-demo" },
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "web demo: install wasm-bindgen",
+      "detail": "Installs wasm-bindgen-cli at the version in web-demo/Cargo.lock unless it is already there",
+      "type": "shell",
+      "options": { "cwd": "${workspaceFolder}/examples/web-demo" },
+      "command": "v=$(cargo pkgid wasm-bindgen | sed 's/.*@//'); [ \"$(wasm-bindgen --version 2>/dev/null)\" = \"wasm-bindgen $v\" ] || cargo install wasm-bindgen-cli --version \"$v\" --locked",
+      "windows": {
+        "options": {
+          "cwd": "${workspaceFolder}/examples/web-demo",
+          "shell": { "executable": "powershell.exe", "args": ["-NoProfile", "-Command"] }
+        },
+        "command": "$v = (cargo pkgid wasm-bindgen) -replace '.*@', ''; if ((Get-Command wasm-bindgen -ErrorAction SilentlyContinue) -and (wasm-bindgen --version) -eq ('wasm-bindgen ' + $v)) { exit 0 }; cargo install wasm-bindgen-cli --version $v --locked; exit $LASTEXITCODE"
+      },
+      "presentation": { "reveal": "silent" },
+      "problemMatcher": []
+    },
+    {
+      "label": "serve: web demo",
+      "detail": "Builds, then serves web-demo/ on http://127.0.0.1:8000",
+      "type": "process",
+      "command": "python3",
+      "args": ["-u", "-m", "http.server", "8000", "--bind", "127.0.0.1"],
+      "windows": { "command": "py", "args": ["-3", "-u", "-m", "http.server", "8000", "--bind", "127.0.0.1"] },
+      "options": { "cwd": "${workspaceFolder}/examples/web-demo" },
+      "dependsOn": ["build: web demo"],
+      "isBackground": true,
+      // Ready once the server prints its banner (lets other tasks and launch configs wait on it).
+      "problemMatcher": {
+        "owner": "web-demo",
+        "pattern": { "regexp": "^__never__$" },
+        "background": { "activesBegins": true, "beginsPattern": "^Serving HTTP", "endsPattern": "^Serving HTTP" }
+      }
+    }
+  ]
+}

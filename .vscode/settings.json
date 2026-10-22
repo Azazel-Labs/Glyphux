@@ -1,0 +1,42 @@
+{
+  // Two Cargo workspaces live in this folder: the crates (root) and the wasm32-only web demo.
+  "rust-analyzer.linkedProjects": [
+    "Cargo.toml",
+    "examples/web-demo/Cargo.toml"
+  ],
+  "rust-analyzer.cargo.features": "all",
+  "rust-analyzer.check.command": "clippy",
+  "rust-analyzer.check.allTargets": true,
+  "rust-analyzer.imports.granularity.group": "module",
+  "rust-analyzer.imports.prefix": "crate",
+
+  "[rust]": {
+    "editor.defaultFormatter": "rust-lang.rust-analyzer",
+    "editor.formatOnSave": true,
+    "editor.rulers": [120]
+  },
+  "[toml]": {
+    "editor.defaultFormatter": "tamasfe.even-better-toml"
+  },
+  "evenBetterToml.formatter.reorderKeys": false,
+  "evenBetterToml.formatter.allowedBlankLines": 1,
+
+  "files.eol": "\n",
+  "files.encoding": "utf8",
+  "files.insertFinalNewline": true,
+  "files.trimFinalNewlines": true,
+  "files.trimTrailingWhitespace": true,
+  "[markdown]": {
+    "files.trimTrailingWhitespace": false
+  },
+
+  "files.watcherExclude": {
+    "**/target/**": true,
+    "**/pkg/**": true
+  },
+  "search.exclude": {
+    "**/target": true,
+    "**/pkg": true,
+    "**/Cargo.lock": true
+  }
+}
