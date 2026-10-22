@@ -7,8 +7,8 @@
 //! title's weight.
 use std::path::Path;
 
-use msdfr_gpu::demo::Scene;
-use msdfr_gpu::{default_device, msdfr, wgpu};
+use textra_gpu::demo::Scene;
+use textra_gpu::{default_device, textra, wgpu};
 
 const USAGE: &str = "usage: text_demo <font> [width] [height] [out_prefix] [frames]";
 
@@ -93,8 +93,8 @@ fn main() {
             format!("frame {f}")
         };
         if save {
-            let px = msdfr_gpu::read_texture_layer(&device, &queue, &target, 0);
-            std::fs::write(&path, msdfr::io::png::encode_png(w, h, 4, &px)).unwrap();
+            let px = textra_gpu::read_texture_layer(&device, &queue, &target, 0);
+            std::fs::write(&path, textra::io::png::encode_png(w, h, 4, &px)).unwrap();
         }
         let st = scene.atlas.stats();
         println!(
@@ -118,7 +118,7 @@ fn main() {
         return;
     }
     let size = scene.atlas.config().size;
-    let px = msdfr_gpu::read_texture_layer(&device, &queue, scene.atlas.texture(), 0);
+    let px = textra_gpu::read_texture_layer(&device, &queue, scene.atlas.texture(), 0);
     // Show the atlas' MSDF channels (alpha = true distance, made opaque).
     let rgb: Vec<u8> = px
         .as_chunks::<4>()
@@ -128,7 +128,7 @@ fn main() {
         .collect();
     std::fs::write(
         format!("{prefix}_atlas.png"),
-        msdfr::io::png::encode_png(size, size, 4, &rgb),
+        textra::io::png::encode_png(size, size, 4, &rgb),
     )
     .unwrap();
 }

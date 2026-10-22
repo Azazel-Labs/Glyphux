@@ -1,0 +1,17 @@
+[package]
+name = "textra-atlas"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Font atlas generator built on textra: charsets, glyph packing, SDF/PSDF/MSDF/MTSDF atlases and JSON/CSV layouts (msdf-atlas-gen compatible)"
+readme = "README.md"
+keywords = ["msdf", "sdf", "font", "atlas", "text-rendering"]
+categories = ["graphics", "rendering", "text-processing"]
+
+[dependencies]
+textra = { workspace = true, features = ["font"] }
+
+[lints]
+workspace = true

@@ -1,8 +1,8 @@
-# msdfr-gpu web demo
+# textra-gpu web demo
 
 Live: https://azazel-labs.github.io/Textra/ (deployed by CI from main).
 
-The `msdfr_gpu::demo::Scene` in a browser canvas on WebGPU. Every glyph's field is generated
+The `textra_gpu::demo::Scene` in a browser canvas on WebGPU. Every glyph's field is generated
 on the GPU the first time it is needed at a size level; nothing is pre-baked.
 
 * A title whose letters bounce and wobble one by one under a pulsing glow, its "-gpu"
@@ -37,7 +37,7 @@ cargo install wasm-bindgen-cli --version <wasm-bindgen version in Cargo.lock> --
 
 cargo build --release                   # .cargo/config.toml makes wasm32 the default target
 wasm-bindgen --target web --no-typescript --out-dir pkg \
-  target/wasm32-unknown-unknown/release/msdfr_gpu_web_demo.wasm
+  target/wasm32-unknown-unknown/release/textra_gpu_web_demo.wasm
 python3 -m http.server 8000 --bind 127.0.0.1   # then open http://127.0.0.1:8000
 ```
 

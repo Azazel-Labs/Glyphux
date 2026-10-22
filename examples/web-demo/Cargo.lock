@@ -242,36 +242,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 
 [[package]]
-name = "msdfr"
-version = "0.1.0"
-dependencies = [
- "bytemuck",
- "ttf-parser",
-]
-
-[[package]]
-name = "msdfr-gpu"
-version = "0.1.0"
-dependencies = [
- "bytemuck",
- "harfrust",
- "msdfr",
- "unicode-bidi",
- "wgpu",
-]
-
-[[package]]
-name = "msdfr-gpu-web-demo"
-version = "0.1.0"
-dependencies = [
- "msdfr-gpu",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
- "wgpu",
-]
-
-[[package]]
 name = "naga"
 version = "30.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -538,6 +508,36 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06794f8f6c5c898b3275aebefa6b8a1cb24cd2c6c79397ab15774837a0bc5755"
 dependencies = [
  "winapi-util",
+]
+
+[[package]]
+name = "textra"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "ttf-parser",
+]
+
+[[package]]
+name = "textra-gpu"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "harfrust",
+ "textra",
+ "unicode-bidi",
+ "wgpu",
+]
+
+[[package]]
+name = "textra-gpu-web-demo"
+version = "0.1.0"
+dependencies = [
+ "textra-gpu",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "wgpu",
 ]
 
 [[package]]

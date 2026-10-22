@@ -447,50 +447,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 
 [[package]]
-name = "msdfr"
-version = "0.1.0"
-dependencies = [
- "bytemuck",
- "ttf-parser",
-]
-
-[[package]]
-name = "msdfr-atlas"
-version = "0.1.0"
-dependencies = [
- "msdfr",
-]
-
-[[package]]
-name = "msdfr-cli"
-version = "0.1.0"
-dependencies = [
- "clap",
- "msdfr",
- "msdfr-atlas",
-]
-
-[[package]]
-name = "msdfr-examples"
-version = "0.1.0"
-dependencies = [
- "msdfr",
- "msdfr-gpu",
-]
-
-[[package]]
-name = "msdfr-gpu"
-version = "0.1.0"
-dependencies = [
- "bytemuck",
- "harfrust",
- "msdfr",
- "naga",
- "unicode-bidi",
- "wgpu",
-]
-
-[[package]]
 name = "naga"
 version = "30.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -916,6 +872,50 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06794f8f6c5c898b3275aebefa6b8a1cb24cd2c6c79397ab15774837a0bc5755"
 dependencies = [
  "winapi-util",
+]
+
+[[package]]
+name = "textra"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "ttf-parser",
+]
+
+[[package]]
+name = "textra-atlas"
+version = "0.1.0"
+dependencies = [
+ "textra",
+]
+
+[[package]]
+name = "textra-cli"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "textra",
+ "textra-atlas",
+]
+
+[[package]]
+name = "textra-examples"
+version = "0.1.0"
+dependencies = [
+ "textra",
+ "textra-gpu",
+]
+
+[[package]]
+name = "textra-gpu"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "harfrust",
+ "naga",
+ "textra",
+ "unicode-bidi",
+ "wgpu",
 ]
 
 [[package]]

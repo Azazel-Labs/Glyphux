@@ -28,23 +28,23 @@
       "cwd": "${workspaceFolder}"
     },
     {
-      "name": "msdfr-cli: msdfr (glyph to PNG)",
+      "name": "textra-cli: textra (glyph to PNG)",
       "type": "lldb",
       "request": "launch",
       "cargo": {
-        "args": ["build", "-p", "msdfr-cli", "--bin", "msdfr"],
-        "filter": { "name": "msdfr", "kind": "bin" }
+        "args": ["build", "-p", "textra-cli", "--bin", "textra"],
+        "filter": { "name": "textra", "kind": "bin" }
       },
-      "args": ["msdf", "-font", "${input:font}", "${input:char}", "-o", "${workspaceFolder}/target/msdfr.png", "-size", "64", "64", "-autoframe"],
+      "args": ["msdf", "-font", "${input:font}", "${input:char}", "-o", "${workspaceFolder}/target/textra.png", "-size", "64", "64", "-autoframe"],
       "cwd": "${workspaceFolder}"
     },
     {
-      "name": "msdfr: unit tests",
+      "name": "textra: unit tests",
       "type": "lldb",
       "request": "launch",
       "cargo": {
-        "args": ["test", "--no-run", "-p", "msdfr", "--lib"],
-        "filter": { "name": "msdfr", "kind": "lib" }
+        "args": ["test", "--no-run", "-p", "textra", "--lib"],
+        "filter": { "name": "textra", "kind": "lib" }
       },
       "cwd": "${workspaceFolder}"
     },
@@ -60,11 +60,11 @@
       "cwd": "${workspaceFolder}"
     },
     {
-      "name": "msdfr-gpu: parity tests (incl. whole font)",
+      "name": "textra-gpu: parity tests (incl. whole font)",
       "type": "lldb",
       "request": "launch",
       "cargo": {
-        "args": ["test", "--no-run", "-p", "msdfr-gpu", "--test", "parity"],
+        "args": ["test", "--no-run", "-p", "textra-gpu", "--test", "parity"],
         "filter": { "name": "parity", "kind": "test" }
       },
       "args": ["--include-ignored"],

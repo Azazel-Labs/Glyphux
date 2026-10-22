@@ -1,6 +1,6 @@
 [package]
-name = "msdfr-examples"
-description = "Runnable demos of msdfr and msdfr-gpu (cargo run --release --bin <name>)"
+name = "textra-examples"
+description = "Runnable demos of textra and textra-gpu (cargo run --release --bin <name>)"
 version.workspace = true
 edition.workspace = true
 rust-version = "1.93"
@@ -8,8 +8,8 @@ license.workspace = true
 publish = false
 
 [dependencies]
-msdfr.workspace = true
-msdfr-gpu = { workspace = true, features = ["demo"] }
+textra.workspace = true
+textra-gpu = { workspace = true, features = ["demo"] }
 
 [[bin]]
 name = "glyph"

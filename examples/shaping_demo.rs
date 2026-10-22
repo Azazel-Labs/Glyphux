@@ -4,9 +4,9 @@
 //! usage: shaping_demo [out.png]   (uses fonts commonly found on Linux; missing ones are skipped)
 use std::sync::Arc;
 
-use msdfr_gpu::text::{Align, TextStyle, layout_text};
-use msdfr_gpu::units::{Units, px};
-use msdfr_gpu::{AtlasConfig, GlyphAtlas, Shaper, ShapingFont, TextRenderer, default_device, msdfr, wgpu};
+use textra_gpu::text::{Align, TextStyle, layout_text};
+use textra_gpu::units::{Units, px};
+use textra_gpu::{AtlasConfig, GlyphAtlas, Shaper, ShapingFont, TextRenderer, default_device, textra, wgpu};
 
 /// Font path, variation axes, text, size (px).
 type Line = (&'static str, &'static [(&'static str, f32)], &'static str, f32);
@@ -186,7 +186,7 @@ fn main() {
         renderer.render(&mut pass);
     }
     queue.submit([enc.finish()]);
-    let px = msdfr_gpu::read_texture_layer(&device, &queue, &target, 0);
-    std::fs::write(&out_path, msdfr::io::png::encode_png(w, h, 4, &px)).unwrap();
+    let px = textra_gpu::read_texture_layer(&device, &queue, &target, 0);
+    std::fs::write(&out_path, textra::io::png::encode_png(w, h, 4, &px)).unwrap();
     println!("wrote {out_path}");
 }

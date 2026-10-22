@@ -14,17 +14,17 @@ computes exact cubic distances, preprocesses outlines more robustly and has no C
 
 | Crate | What it is |
 |---|---|
-| [`msdfr`](crates/msdfr) | The library: shapes, edge coloring, SDF/PSDF/MSDF/MTSDF generation, error correction, font/SVG/shape-description input, PNG & co. output. No required dependencies (`ttf-parser` for fonts and `bytemuck` for the `gpu` feature, both optional). No `unsafe`. |
-| [`msdfr-atlas`](crates/msdfr-atlas) | Font atlases on top of `msdfr`, in the role of [msdf-atlas-gen](https://github.com/Chlumsky/msdf-atlas-gen): charsets, glyph boxes, packing, parallel generation, JSON/CSV layouts in msdf-atlas-gen's format. Depends only on `msdfr`. |
-| [`msdfr-cli`](crates/msdfr-cli) | The `msdfr` and `msdfr-atlas` command line tools ([clap](https://crates.io/crates/clap)); also accept msdfgen / msdf-atlas-gen's single-dash options. |
-| [`msdfr-gpu`](crates/msdfr-gpu) | The same fields generated on the GPU with wgpu 30 compute shaders (native and WebGPU), a glyph atlas that picks each glyph's field resolution from the size it is drawn at, text shaping, and an MSDF text renderer. The only crate that depends on wgpu. |
+| [`textra`](crates/textra) | The library: shapes, edge coloring, SDF/PSDF/MSDF/MTSDF generation, error correction, font/SVG/shape-description input, PNG & co. output. No required dependencies (`ttf-parser` for fonts and `bytemuck` for the `gpu` feature, both optional). No `unsafe`. |
+| [`textra-atlas`](crates/textra-atlas) | Font atlases on top of `textra`, in the role of [msdf-atlas-gen](https://github.com/Chlumsky/msdf-atlas-gen): charsets, glyph boxes, packing, parallel generation, JSON/CSV layouts in msdf-atlas-gen's format. Depends only on `textra`. |
+| [`textra-cli`](crates/textra-cli) | The `textra` and `textra-atlas` command line tools ([clap](https://crates.io/crates/clap)); also accept msdfgen / msdf-atlas-gen's single-dash options. |
+| [`textra-gpu`](crates/textra-gpu) | The same fields generated on the GPU with wgpu 30 compute shaders (native and WebGPU), a glyph atlas that picks each glyph's field resolution from the size it is drawn at, text shaping, and an MSDF text renderer. The only crate that depends on wgpu. |
 
 ```
-cargo install --path crates/msdfr-cli
-msdfr msdf --font MyFont.ttf A -o a.png --size 32 32 --pxrange 4 --autoframe --testrender preview.png 512 512
-msdfr-atlas --font MyFont.ttf --type msdf --size 32 --pxrange 4 --imageout atlas.png --json atlas.json
+cargo install --path crates/textra-cli
+textra msdf --font MyFont.ttf A -o a.png --size 32 32 --pxrange 4 --autoframe --testrender preview.png 512 512
+textra-atlas --font MyFont.ttf --type msdf --size 32 --pxrange 4 --imageout atlas.png --json atlas.json
 # msdfgen / msdf-atlas-gen style works too:
-msdfr msdf -font MyFont.ttf 'A' -o a.png -size 32 32 -pxrange 4 -autoframe
+textra msdf -font MyFont.ttf 'A' -o a.png -size 32 32 -pxrange 4 -autoframe
 ```
 
 ## How it works
@@ -171,7 +171,7 @@ field.
 
 **Faster:** 3.2 to 3.9× faster than msdfgen 1.13 single-threaded for MSDF/MTSDF, more with threads:
 
-| Workload (94 printable ASCII glyphs, error correction on) | msdfgen | msdfr | speedup |
+| Workload (94 printable ASCII glyphs, error correction on) | msdfgen | textra | speedup |
 |---|---:|---:|---:|
 | DejaVu Sans (TrueType) MSDF 32 px, 1 thread | 144.9 ms | 36.7 ms | **3.9×** |
 | DejaVu Sans MSDF 64 px, 1 thread | 436.9 ms | 111.6 ms | **3.9×** |
@@ -180,12 +180,12 @@ field.
 | Inter Regular (CFF / cubic) MSDF 32 px, 1 thread | 158.3 ms | 42.0 ms | **3.8×** |
 | Inter Regular MSDF 64 px, 1 thread | 492.0 ms | 134.8 ms | **3.7×** |
 | Inter Regular SDF 32 px, 1 thread | 50.3 ms | 20.6 ms | 2.4× |
-| Atlas: DejaVu MSDF 32 px, 2 threads (msdfgen: OpenMP; msdfr: `par_map`) | 88.1 ms | 18.7 ms | **4.7×** |
+| Atlas: DejaVu MSDF 32 px, 2 threads (msdfgen: OpenMP; textra: `par_map`) | 88.1 ms | 18.7 ms | **4.7×** |
 | Large: DejaVu MSDF 256 px, 2 threads in each glyph | 3055 ms | 788 ms | **3.9×** |
 
 <sub>2-core Intel Xeon @ 2.1 GHz VM, msdfgen built with `-O3` and OpenMP (`OMP_NUM_THREADS=1`
 for the single-thread rows), same shapes, same "simple" edge coloring, best of several runs.
-msdfr side: `cargo bench -p msdfr`.</sub>
+textra side: `cargo bench -p textra`.</sub>
 
 Where the speed comes from (none of it changes results):
 * **Exact culling.** Each 8×8 tile computes provable upper bounds of the nearest distance per
@@ -214,11 +214,11 @@ Where the speed comes from (none of it changes results):
   modes when given the same colored shape (3 fonts × 94 glyphs × 4 modes, ~6 M values,
   0 differences; CFF fonts within 2.4e-7).
 * *Exact cubic distance.* msdfgen finds the nearest point on a cubic with a few Newton
-  iterations from fixed starts, which can miss tight curves. msdfr isolates the roots of the
+  iterations from fixed starts, which can miss tight curves. textra isolates the roots of the
   distance derivative in Bernstein form (Descartes' rule of signs) with rigorous pruning
   bounds. The `cubic_kernel_matches_brute_force` test checks it against brute force: 0 misses
   in 8.6 M queries on the cubic edges of two CFF fonts. On random curvy cubic shapes, msdfgen
-  had 36 of 57 600 texels off by more than 0.01 px (worst 1.89 px); msdfr had none (worst
+  had 36 of 57 600 texels off by more than 0.01 px (worst 1.89 px); textra had none (worst
   0.0004 px, which is the sampling error of the ground truth).
 * *Contour orientation fixing* by fill rule (non-zero / even-odd) before generation, so
   TrueType (clockwise) and PostScript/CFF (counter-clockwise) outlines, SVG paths and hand-made
@@ -231,7 +231,7 @@ Where the speed comes from (none of it changes results):
 * Ink-trap-aware edge coloring by default: fewer visible artifacts than msdfgen's CLI default
   (pixels off by > 0.5 when rendered at 8×, vs. exact rasterization, all printable ASCII):
 
-  | | msdfgen default | msdfr default |
+  | | msdfgen default | textra default |
   |---|---:|---:|
   | DejaVu Sans 24 px, range 3 | 365 | **304** |
   | DejaVu Sans 32 px, range 4 | 75 | **67** |
@@ -250,14 +250,14 @@ Where the speed comes from (none of it changes results):
   msdf-atlas-gen's, plus BMP, FL32, RGBA, raw and text output.
 * `msdfgen`-compatible text shape descriptions (read and write) and command line.
 
-## Font atlases (`msdfr-atlas`)
+## Font atlases (`textra-atlas`)
 
 Same job and output format as msdf-atlas-gen, so existing loaders and shaders work unchanged:
 the JSON has the same `atlas` / `metrics` / `glyphs` (`planeBounds` in ems, `atlasBounds` in
 pixels) / `kerning` structure and values, and text rendered from either atlas is visually
 identical (mean coverage difference 0.0005).
 
-| Atlas (MSDF, 32 px/em, range 4 px) | msdf-atlas-gen | msdfr-atlas | speedup |
+| Atlas (MSDF, 32 px/em, range 4 px) | msdf-atlas-gen | textra-atlas | speedup |
 |---|---:|---:|---:|
 | DejaVu Sans, all 6 253 glyphs, 1 thread | 22.2 s | 4.4 s | **5.1×** |
 | DejaVu Sans, all 6 253 glyphs, 2 threads | 16.8 s | 2.6 s | **6.6×** |
@@ -273,29 +273,29 @@ psdf, msdf, mtsdf; fixed `--dimensions` (the glyph size is then maximized) or au
 dimensions with `--pots`, `--potr`, `--square`, `--square2`, `--square4` (default), `--anydims`;
 pixel or em ranges (also asymmetric), padding, spacing, miter room for sharp corners, pixel
 alignment, uniform grids (`--uniformgrid`, `--uniformcols`, `--uniformcell`), `--yorigin`,
-kerning, variable fonts and every msdfr generator option. Packing uses MaxRects for small sets
+kerning, variable fonts and every textra generator option. Packing uses MaxRects for small sets
 and a skyline packer for large ones, with a bisection search for the smallest dimensions.
 
 ```rust
-use msdfr_atlas::*;
+use textra_atlas::*;
 
 let data = std::fs::read("font.ttf")?;
 let font = FontGeometry::load(&data, 0, &[], &GlyphSelection::Charset(Charset::ascii()), &GlyphOptions::default())?;
-let config = AtlasConfig { size: Some(32.0), range: RangeSpec::Pixels(msdfr::Range::symmetric(4.0)), ..AtlasConfig::default() };
+let config = AtlasConfig { size: Some(32.0), range: RangeSpec::Pixels(textra::Range::symmetric(4.0)), ..AtlasConfig::default() };
 let atlas = generate(&font, &config)?;
-atlas.image.save("atlas.png", msdfr::io::ImageFormat::Png)?;
+atlas.image.save("atlas.png", textra::io::ImageFormat::Png)?;
 std::fs::write("atlas.json", layout::to_json(&font, &atlas.layout, &config))?;
 ```
 
-## GPU generation (`msdfr-gpu`)
+## GPU generation (`textra-gpu`)
 
 For apps that generate glyph fields at run time (see [How it works](#how-it-works)). The
 CPU bins each glyph's edges into 8×8 tiles with exact culling bounds, and WGSL compute passes
-evaluate every texel of all the glyphs requested in a frame in one batch. msdfr's selection
+evaluate every texel of all the glyphs requested in a frame in one batch. textra's selection
 rules, overlapping contour combiner and error correction are all included, and the output
 matches the CPU's to about 3·10⁻⁶, apart from exact ties. `GlyphAtlas` caches glyphs in a
 texture array at power-of-two levels chosen from the displayed size, and `TextRenderer`
-draws them. See [its README](crates/msdfr-gpu/README.md) and the
+draws them. See [its README](crates/textra-gpu/README.md) and the
 [web demo](examples/web-demo).
 
 ```
@@ -305,8 +305,8 @@ cargo run --release --bin text_demo -- examples/web-demo/assets/Inter-Regular.ot
 ## Library
 
 ```rust
-use msdfr::*;
-use msdfr::io::font::{Font, FontScaling};
+use textra::*;
+use textra::io::font::{Font, FontScaling};
 
 let data = std::fs::read("MyFont.ttf")?;
 let font = Font::from_bytes(&data, 0, FontScaling::EmNormalized)?;
@@ -320,7 +320,7 @@ edge_coloring(&mut shape, ColoringStrategy::InkTrap, DEFAULT_ANGLE_THRESHOLD, 0)
 let transform = Transform::new(Projection::uniform(32.0, Vec2::new(0.125, 0.125)), Range::symmetric(0.125));
 let mut msdf = Bitmap::<3>::new(32, 32);
 generate_msdf(&mut msdf, &shape, &transform, &GeneratorConfig::default());
-msdfr::io::save_png(&msdf, "a.png")?;
+textra::io::save_png(&msdf, "a.png")?;
 ```
 
 * Generators: `generate_sdf`, `generate_psdf`, `generate_msdf`, `generate_mtsdf` (and
@@ -345,13 +345,13 @@ Both tools are built with clap (`--help` lists everything, grouped by topic). Op
 follow msdfgen / msdf-atlas-gen, and their single-dash spelling (`-pxrange 4`) is rewritten to
 `--pxrange 4` before parsing, so existing scripts keep working.
 
-`msdfr [sdf|psdf|msdf|mtsdf|metrics] <input> [options]`. Inputs:
+`textra [sdf|psdf|msdf|mtsdf|metrics] <input> [options]`. Inputs:
 `--font <file> <char>` (`'A'`, `65`, `0x41`, or glyph index `g36`), `--svg <file>`,
 `--shapedesc <file>`, `--defineshape "<desc>"`, `--stdin`. Common options: `-o`, `--size`/`--dimensions`,
 `--pxrange`, `--range`, `--scale`, `--translate`, `--autoframe`, `--angle`, `--coloringstrategy`,
 `--errorcorrection`, `--fillrule`, `--testrender`, `--exportshape`, `--printmetrics`, `--threads`, `--stats`.
 
-`msdfr-atlas --font <file> [--charset <file> | --chars <spec> | --glyphset <file> | --allglyphs] --imageout <file> [--json <file>] [--csv <file>] [options]`.
+`textra-atlas --font <file> [--charset <file> | --chars <spec> | --glyphset <file> | --allglyphs] --imageout <file> [--json <file>] [--csv <file>] [options]`.
 
 Differences from msdfgen's defaults: ink-trap coloring, contour reorientation (`-noorient`
 to disable) and the "auto" error correction mode even with the scanline pass (msdfgen falls

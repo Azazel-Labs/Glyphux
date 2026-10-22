@@ -3,9 +3,9 @@
 //! usage: glyph_zoom <font> <text> <level> <px> <out.png> [ec: auto|off|fast|full]
 use std::sync::Arc;
 
-use msdfr_gpu::text::{Align, TextStyle, layout_text};
-use msdfr_gpu::units::{Units, px};
-use msdfr_gpu::{AtlasConfig, GlyphAtlas, Shaper, ShapingFont, TextRenderer, default_device, msdfr, wgpu};
+use textra_gpu::text::{Align, TextStyle, layout_text};
+use textra_gpu::units::{Units, px};
+use textra_gpu::{AtlasConfig, GlyphAtlas, Shaper, ShapingFont, TextRenderer, default_device, textra, wgpu};
 
 const USAGE: &str = "usage: glyph_zoom <font> <text> <level> <px> <out.png> [ec: auto|off|fast|full]";
 
@@ -43,19 +43,19 @@ fn main() {
         }
     };
     match a.get(6).map(String::as_str) {
-        Some("off") => config.error_correction = msdfr::ErrorCorrectionConfig::DISABLED,
+        Some("off") => config.error_correction = textra::ErrorCorrectionConfig::DISABLED,
         Some("fast") => {
-            config.error_correction.distance_check = msdfr::DistanceCheckMode::DoNotCheck;
+            config.error_correction.distance_check = textra::DistanceCheckMode::DoNotCheck;
         }
         Some("full") => {
-            config.error_correction.distance_check = msdfr::DistanceCheckMode::AlwaysCheck;
+            config.error_correction.distance_check = textra::DistanceCheckMode::AlwaysCheck;
         }
         _ => {}
     }
     match std::env::var("COLORING").as_deref() {
-        Ok("simple") => config.coloring = msdfr::ColoringStrategy::Simple,
-        Ok("distance") => config.coloring = msdfr::ColoringStrategy::Distance,
-        Ok("inktrap") => config.coloring = msdfr::ColoringStrategy::InkTrap,
+        Ok("simple") => config.coloring = textra::ColoringStrategy::Simple,
+        Ok("distance") => config.coloring = textra::ColoringStrategy::Distance,
+        Ok("inktrap") => config.coloring = textra::ColoringStrategy::InkTrap,
         _ => {}
     }
     let mut shaper = Shaper::new();
@@ -132,6 +132,6 @@ fn main() {
         renderer.render(&mut pass);
     }
     queue.submit([enc.finish()]);
-    let pixels = msdfr_gpu::read_texture_layer(&device, &queue, &target, 0);
-    std::fs::write(&a[5], msdfr::io::png::encode_png(w, h, 4, &pixels)).unwrap();
+    let pixels = textra_gpu::read_texture_layer(&device, &queue, &target, 0);
+    std::fs::write(&a[5], textra::io::png::encode_png(w, h, 4, &pixels)).unwrap();
 }

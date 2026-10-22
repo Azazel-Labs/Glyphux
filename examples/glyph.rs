@@ -1,7 +1,7 @@
 //! Generates an MSDF for one glyph (the README example).
 //! usage: glyph <font.ttf> <char> [out.png]
-use msdfr::io::font::{Font, FontScaling};
-use msdfr::{
+use textra::io::font::{Font, FontScaling};
+use textra::{
     Bitmap, ColoringStrategy, DEFAULT_ANGLE_THRESHOLD, FillRule, GeneratorConfig, Projection, Range, Transform, Vec2,
     edge_coloring, generate_msdf, io,
 };

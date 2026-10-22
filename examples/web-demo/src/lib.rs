@@ -1,4 +1,4 @@
-//! WebGPU demo: the shared `msdfr_gpu::demo::Scene` drawn into a `<canvas id="msdfr">` every
+//! WebGPU demo: the shared `textra_gpu::demo::Scene` drawn into a `<canvas id="textra">` every
 //! animation frame. Glyph fields are generated on the GPU on first use at each size level.
 //! The page adds fonts and sets the text through the exported functions below.
 //!
@@ -8,8 +8,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use msdfr_gpu::ShapingFont;
-use msdfr_gpu::demo::Scene;
+use textra_gpu::ShapingFont;
+use textra_gpu::demo::Scene;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 
@@ -84,8 +84,8 @@ pub fn set_show_atlas(show: bool) {
 /// The face of a font file or collection whose PostScript name is `postscript_name` (the
 /// first face if no name is given).
 fn face_index(data: &[u8], postscript_name: Option<&str>) -> Result<u32, String> {
-    use msdfr_gpu::msdfr::io::font::ttf_parser::name_id;
-    use msdfr_gpu::msdfr::io::font::{Font, FontScaling};
+    use textra_gpu::textra::io::font::ttf_parser::name_id;
+    use textra_gpu::textra::io::font::{Font, FontScaling};
     // Each face is parsed once, until one fails (past the last face of a collection).
     let mut faces = (0..256).map_while(|i| {
         Font::from_bytes(data, i, FontScaling::EmNormalized)
@@ -127,13 +127,13 @@ pub fn start() {
     // With panic = "abort" a panic surfaces as an opaque "unreachable" trap and the animation
     // loop stops: say what happened, in the console and on the page.
     std::panic::set_hook(Box::new(|info| {
-        let msg = format!("msdfr demo stopped: {info}");
+        let msg = format!("textra demo stopped: {info}");
         web_sys::console::error_1(&msg.as_str().into());
         show("status", &msg);
     }));
     wasm_bindgen_futures::spawn_local(async {
         if let Err(e) = run().await {
-            web_sys::console::error_1(&format!("msdfr demo: {e}").into());
+            web_sys::console::error_1(&format!("textra demo: {e}").into());
             show("status", &format!("Could not start: {e}"));
         }
     });
@@ -154,10 +154,10 @@ async fn run() -> Result<(), String> {
     let window = web_sys::window().ok_or("no window")?;
     let document = window.document().ok_or("no document")?;
     let canvas: web_sys::HtmlCanvasElement = document
-        .get_element_by_id("msdfr")
-        .ok_or("no <canvas id=msdfr>")?
+        .get_element_by_id("textra")
+        .ok_or("no <canvas id=textra>")?
         .dyn_into()
-        .map_err(|_| "#msdfr is not a canvas")?;
+        .map_err(|_| "#textra is not a canvas")?;
     let mut desc = wgpu::InstanceDescriptor::new_without_display_handle();
     desc.backends = wgpu::Backends::BROWSER_WEBGPU;
     let instance = wgpu::Instance::new(desc);
@@ -174,10 +174,10 @@ async fn run() -> Result<(), String> {
         .map_err(|e| format!("WebGPU adapter: {e}"))?;
     let (device, queue) = adapter
         .request_device(&wgpu::DeviceDescriptor {
-            label: Some("msdfr demo"),
+            label: Some("textra demo"),
             // GPU timestamps for the on-screen timings, where the browser offers them.
             required_features: adapter.features() & wgpu::Features::TIMESTAMP_QUERY,
-            required_limits: msdfr_gpu::required_limits().using_resolution(adapter.limits()),
+            required_limits: textra_gpu::required_limits().using_resolution(adapter.limits()),
             experimental_features: wgpu::ExperimentalFeatures::disabled(),
             memory_hints: wgpu::MemoryHints::MemoryUsage,
             trace: wgpu::Trace::Off,
