@@ -450,7 +450,7 @@ impl Scene {
 
     /// Adds a font (face `index` of a collection) to the fallback list; a font already added
     /// under `name` is replaced.
-    pub fn add_font(&mut self, name: &str, data: Vec<u8>, index: u32) -> Result<(), String> {
+    pub fn add_font(&mut self, name: &str, data: impl Into<Arc<Vec<u8>>>, index: u32) -> Result<(), String> {
         let slot = self
             .fonts
             .iter()
@@ -458,7 +458,7 @@ impl Scene {
             .unwrap_or(self.fonts.len());
         // Ids are never reused, so the atlas never mixes up two fonts' glyphs.
         let id = self.fonts.iter().map(|f| f.font.id + 1).max().unwrap_or(0);
-        let font = ShapingFont::new(id, Arc::new(data), index).ok_or_else(|| format!("{name}: not a font"))?;
+        let font = ShapingFont::new(id, data.into(), index).ok_or_else(|| format!("{name}: not a font"))?;
         let named = NamedFont {
             name: name.to_owned(),
             font,
@@ -475,8 +475,8 @@ impl Scene {
 
     /// A variable font with a `wght` axis for the title's breathing weight (replaces the
     /// previous one).
-    pub fn set_weight_font(&mut self, data: Vec<u8>) -> Result<(), String> {
-        let data = Arc::new(data);
+    pub fn set_weight_font(&mut self, data: impl Into<Arc<Vec<u8>>>) -> Result<(), String> {
+        let data = data.into();
         for (k, &wght) in WEIGHTS.iter().enumerate() {
             let id = self.fonts.iter().map(|f| f.font.id + 1).max().unwrap_or(0);
             let font = ShapingFont::new(id, data.clone(), 0)

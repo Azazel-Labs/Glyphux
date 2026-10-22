@@ -94,7 +94,7 @@
       fetch("assets/InterVariable-Latin.ttf")
         .then((r) => r.ok ? r.arrayBuffer() : Promise.reject(r.statusText))
         .then((b) => demo.set_weight_font(new Uint8Array(b)))
-        .catch((e) => console.warn(`InterVariable: ${e}`));
+        .catch((e) => console.warn(`InterVariable: ${e.message ?? e}`));
 
       // Inter is built in; the Noto subsets cover the scene's CJK, Arabic, Devanagari and
       // Thai lines and are added as fallbacks in this order (the first that has a character

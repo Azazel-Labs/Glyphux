@@ -6,7 +6,9 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::Arc;
 
+use msdfr_gpu::ShapingFont;
 use msdfr_gpu::demo::Scene;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
@@ -16,9 +18,13 @@ static FONT: &[u8] = include_bytes!("../assets/Inter-Regular.otf");
 /// Requests from the page, applied at the next frame (they may arrive before the scene exists).
 enum Command {
     Text(String),
-    Font { name: String, data: Vec<u8>, index: u32 },
+    Font {
+        name: String,
+        data: Arc<Vec<u8>>,
+        index: u32,
+    },
     Primary(String),
-    WeightFont(Vec<u8>),
+    WeightFont(Arc<Vec<u8>>),
     ShowAtlas(bool),
 }
 
@@ -37,14 +43,21 @@ pub fn set_text(text: String) {
 }
 
 /// Adds a font to the fallback list under `name` (replacing one of the same name). For a font
-/// collection (.ttc), `postscript_name` picks the face. Errors if the data is not a font.
+/// collection (.ttc), `postscript_name` picks the face. Errors right away if the data is not a
+/// font the scene can use (it is added at the next frame).
 #[wasm_bindgen]
 #[allow(clippy::needless_pass_by_value)] // wasm-bindgen passes owned values
 pub fn add_font(name: String, data: Vec<u8>, postscript_name: Option<String>) -> Result<(), JsError> {
-    let index =
-        face_index(&data, postscript_name.as_deref()).ok_or_else(|| JsError::new(&format!("{name}: not a font")))?;
+    let data = Arc::new(data);
+    let index = face_index(&data, postscript_name.as_deref()).map_err(|e| JsError::new(&format!("{name}: {e}")))?;
+    usable(&data, index).map_err(|e| JsError::new(&format!("{name}: {e}")))?;
     push(Command::Font { name, data, index });
     Ok(())
+}
+
+/// Whether the shaper (not only the outline loader) accepts face `index` of `data`.
+fn usable(data: &Arc<Vec<u8>>, index: u32) -> Result<(), &'static str> {
+    ShapingFont::new(0, data.clone(), index).map(drop).ok_or("not a font")
 }
 
 /// Sets the scene's text in the font added as `name` (others fill in missing characters).
@@ -55,8 +68,11 @@ pub fn set_primary_font(name: String) {
 
 /// A variable font with a `wght` axis for the title's breathing weight.
 #[wasm_bindgen]
-pub fn set_weight_font(data: Vec<u8>) {
+pub fn set_weight_font(data: Vec<u8>) -> Result<(), JsError> {
+    let data = Arc::new(data);
+    usable(&data, 0).map_err(|e| JsError::new(&format!("variable font: {e}")))?;
     push(Command::WeightFont(data));
+    Ok(())
 }
 
 /// Shows or hides the atlas pages along the bottom.
@@ -66,32 +82,43 @@ pub fn set_show_atlas(show: bool) {
 }
 
 /// The face of a font file or collection whose PostScript name is `postscript_name` (the
-/// first face if there is none or no name is given); `None` if `data` is not a font.
-fn face_index(data: &[u8], postscript_name: Option<&str>) -> Option<u32> {
+/// first face if no name is given).
+fn face_index(data: &[u8], postscript_name: Option<&str>) -> Result<u32, String> {
     use msdfr_gpu::msdfr::io::font::ttf_parser::name_id;
     use msdfr_gpu::msdfr::io::font::{Font, FontScaling};
-    Font::from_bytes(data, 0, FontScaling::EmNormalized).ok()?;
+    // Each face is parsed once, until one fails (past the last face of a collection).
+    let mut faces = (0..256).map_while(|i| {
+        Font::from_bytes(data, i, FontScaling::EmNormalized)
+            .ok()
+            .map(|f| (i, f))
+    });
     let Some(want) = postscript_name else {
-        return Some(0);
+        return faces.next().map(|(i, _)| i).ok_or_else(|| "not a font".to_owned());
     };
-    let matches = |i: u32| {
-        Font::from_bytes(data, i, FontScaling::EmNormalized).is_ok_and(|f| {
+    faces
+        .find(|(_, f)| {
             f.face()
                 .names()
                 .into_iter()
                 .any(|n| n.name_id == name_id::POST_SCRIPT_NAME && n.to_string().as_deref() == Some(want))
         })
-    };
-    Some(
-        (0..256)
-            .take_while(|&i| Font::from_bytes(data, i, FontScaling::EmNormalized).is_ok())
-            .find(|&i| matches(i))
-            .unwrap_or(0),
-    )
+        .map(|(i, _)| i)
+        .ok_or_else(|| format!("no face named {want}"))
 }
 
 fn log(s: &str) {
     web_sys::console::log_1(&s.into());
+}
+
+/// Logs a problem and shows it in the page's note under the controls.
+fn report(s: &str) {
+    web_sys::console::error_1(&s.into());
+    if let Some(el) = web_sys::window()
+        .and_then(|w| w.document())
+        .and_then(|d| d.get_element_by_id("note"))
+    {
+        el.set_text_content(Some(s));
+    }
 }
 
 #[wasm_bindgen(start)]
@@ -210,17 +237,17 @@ fn frame(s: &mut State, now: f64) {
             Command::Text(t) => s.scene.set_text(&t),
             Command::Font { name, data, index } => {
                 if let Err(e) = s.scene.add_font(&name, data, index) {
-                    log(&e);
+                    report(&e);
                 }
             }
             Command::Primary(name) => {
                 if !s.scene.set_primary_font(&name) {
-                    log(&format!("no font named {name}"));
+                    report(&format!("no font named {name}"));
                 }
             }
             Command::WeightFont(data) => {
                 if let Err(e) = s.scene.set_weight_font(data) {
-                    log(&e);
+                    report(&e);
                 }
             }
             Command::ShowAtlas(show) => s.scene.show_atlas = show,
