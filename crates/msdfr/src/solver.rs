@@ -26,6 +26,21 @@ impl<const N: usize> Roots<N> {
     pub fn as_slice(&self) -> &[f64] {
         &self.roots[..self.count]
     }
+
+    #[inline(always)]
+    fn as_mut_slice(&mut self) -> &mut [f64] {
+        &mut self.roots[..self.count]
+    }
+}
+
+impl From<Roots<2>> for Roots<3> {
+    #[inline(always)]
+    fn from(r: Roots<2>) -> Self {
+        Roots {
+            roots: [r.roots[0], r.roots[1], 0.0],
+            count: r.count,
+        }
+    }
 }
 
 /// Solves `a x^2 + b x + c = 0`. Degenerate cases (all-zero coefficients) yield no roots.
@@ -73,103 +88,11 @@ pub fn fast_cbrt(x: f64) -> f64 {
     y - (y * y * y - x) / (3.0 * y * y)
 }
 
-/// Solves `x^3 + a x^2 + b x + c = 0`.
-#[inline]
-fn solve_cubic_normed(a: f64, b: f64, c: f64) -> Roots<3> {
-    let mut out = Roots::none();
-    let a2 = a * a;
-    let q = (a2 - 3.0 * b) / 9.0;
-    let r = (a * (2.0 * a2 - 9.0 * b) + 27.0 * c) / 54.0;
-    let r2 = r * r;
-    let q3 = q * q * q;
-    let a3 = a / 3.0;
-    if r2 < q3 {
-        let t = (r / q3.sqrt()).clamp(-1.0, 1.0);
-        let t = t.acos();
-        let m = -2.0 * q.sqrt();
-        out.push(m * (t / 3.0).cos() - a3);
-        out.push(m * ((t + 2.0 * core::f64::consts::PI) / 3.0).cos() - a3);
-        out.push(m * ((t - 2.0 * core::f64::consts::PI) / 3.0).cos() - a3);
-    } else {
-        let mut u = -fast_cbrt(r.abs() + (r2 - q3).sqrt());
-        if r < 0.0 {
-            u = -u;
-        }
-        let v = if u == 0.0 { 0.0 } else { q / u };
-        out.push((u + v) - a3);
-        // Double root when u == v (within tolerance).
-        if u == v || (u - v).abs() <= 1e-9 * (u.abs() + v.abs()) {
-            out.push(-0.5 * (u + v) - a3);
-        }
-    }
-    out
-}
-
-/// Like [`solve_cubic`], but only roots near `[0, 1]` are refined, and the three-root case
-/// uses a single `sin_cos` (angle addition) instead of three cosines. Used for nearest point
-/// queries on quadratic curves, where only roots in `(0, 1)` matter.
-#[inline]
-pub fn solve_cubic_unit(a: f64, b: f64, c: f64, d: f64) -> Roots<3> {
-    if a != 0.0 {
-        let bn = b / a;
-        if bn.abs() < 1e6 {
-            let (a2c, a1, a0) = (bn, c / a, d / a);
-            let mut out = Roots::none();
-            let sq = a2c * a2c;
-            let q = (sq - 3.0 * a1) / 9.0;
-            let r = (a2c * (2.0 * sq - 9.0 * a1) + 27.0 * a0) / 54.0;
-            let r2 = r * r;
-            let q3 = q * q * q;
-            let a3 = a2c / 3.0;
-            if r2 < q3 {
-                let sqrt_q = q.sqrt();
-                let th = (r / (q * sqrt_q)).clamp(-1.0, 1.0).acos() / 3.0;
-                let (s, cs) = th.sin_cos();
-                let m = -2.0 * sqrt_q;
-                const H: f64 = 0.866_025_403_784_438_6; // sqrt(3)/2
-                out.push(m * cs - a3);
-                out.push(m * (-0.5 * cs - H * s) - a3);
-                out.push(m * (-0.5 * cs + H * s) - a3);
-            } else {
-                let mut u = -fast_cbrt(r.abs() + (r2 - q3).sqrt());
-                if r < 0.0 {
-                    u = -u;
-                }
-                let v = if u == 0.0 { 0.0 } else { q / u };
-                out.push((u + v) - a3);
-                if u == v || (u - v).abs() <= 1e-9 * (u.abs() + v.abs()) {
-                    out.push(-0.5 * (u + v) - a3);
-                }
-            }
-            for x in &mut out.roots[..out.count] {
-                if *x > -0.25 && *x < 1.25 {
-                    let t = *x;
-                    let f = ((a * t + b) * t + c) * t + d;
-                    let df = (3.0 * a * t + 2.0 * b) * t + c;
-                    if df != 0.0 {
-                        let nt = t - f / df;
-                        if nt.is_finite() {
-                            let nf = ((a * nt + b) * nt + c) * nt + d;
-                            if nf.abs() <= f.abs() {
-                                *x = nt;
-                            }
-                        }
-                    }
-                }
-            }
-            return out;
-        }
-    }
-    let qd = solve_quadratic(b, c, d);
-    let mut out = Roots::none();
-    for &r in qd.as_slice() {
-        out.push(r);
-    }
-    out
-}
-
-/// [`solve_cubic_unit`] for an already normalized cubic `x^3 + a2 x^2 + a1 x + a0`;
-/// `orig` holds the original coefficients `[a, b, c, d]` used to polish roots near `[0, 1]`.
+/// Roots of a cubic `a x^3 + b x^2 + c x + d`, given normalized as `x^3 + a2 x^2 + a1 x + a0`
+/// (`orig` holds the original coefficients `[a, b, c, d]`). Only roots near `[0, 1]` are
+/// polished with a Newton step, and the three-root case uses a single `sin_cos` (angle
+/// addition) instead of three cosines: this serves nearest-point queries on quadratic
+/// curves, where only roots in `(0, 1)` matter.
 #[inline]
 pub fn solve_cubic_unit_normed(a2c: f64, a1: f64, a0: f64, orig: [f64; 4]) -> Roots<3> {
     let [a, b, c, d] = orig;
@@ -200,7 +123,7 @@ pub fn solve_cubic_unit_normed(a2c: f64, a1: f64, a0: f64, orig: [f64; 4]) -> Ro
             out.push(-0.5 * (u + v) - a3);
         }
     }
-    for x in &mut out.roots[..out.count] {
+    for x in out.as_mut_slice() {
         if *x > -0.25 && *x < 1.25 {
             let t = *x;
             let f = ((a * t + b) * t + c) * t + d;
@@ -217,46 +140,12 @@ pub fn solve_cubic_unit_normed(a2c: f64, a1: f64, a0: f64, orig: [f64; 4]) -> Ro
     out
 }
 
-/// Solves `a x^3 + b x^2 + c x + d = 0`, falling back to the quadratic case when `a` is negligible.
-/// Roots are refined with one Newton iteration on the original polynomial.
-#[inline]
-pub fn solve_cubic(a: f64, b: f64, c: f64, d: f64) -> Roots<3> {
-    if a != 0.0 {
-        let bn = b / a;
-        // A very large normalized quadratic coefficient means the cubic term is numerically irrelevant.
-        if bn.abs() < 1e6 {
-            let mut out = solve_cubic_normed(bn, c / a, d / a);
-            for r in &mut out.roots[..out.count] {
-                let x = *r;
-                let f = ((a * x + b) * x + c) * x + d;
-                let df = (3.0 * a * x + 2.0 * b) * x + c;
-                if df != 0.0 {
-                    let nx = x - f / df;
-                    if nx.is_finite() {
-                        let nf = ((a * nx + b) * nx + c) * nx + d;
-                        if nf.abs() <= f.abs() {
-                            *r = nx;
-                        }
-                    }
-                }
-            }
-            return out;
-        }
-    }
-    let q = solve_quadratic(b, c, d);
-    let mut out = Roots::none();
-    for &r in q.as_slice() {
-        out.push(r);
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn check_cubic(a: f64, b: f64, c: f64, d: f64, expected: &[f64]) {
-        let r = solve_cubic(a, b, c, d);
+        let r = solve_cubic_unit_normed(b / a, c / a, d / a, [a, b, c, d]);
         for &e in expected {
             assert!(
                 r.as_slice().iter().any(|&x| (x - e).abs() < 1e-9),
@@ -274,10 +163,6 @@ mod tests {
         check_cubic(2.0, 0.0, -1.5, 0.5, &[0.5, -1.0]);
         // one real root: x^3 + x + 1
         check_cubic(1.0, 0.0, 1.0, 1.0, &[-0.6823278038280193]);
-        // degenerate to quadratic
-        check_cubic(0.0, 1.0, -3.0, 2.0, &[1.0, 2.0]);
-        // tiny cubic term
-        check_cubic(1e-14, 1.0, -3.0, 2.0, &[1.0, 2.0]);
     }
 
     #[test]
@@ -291,10 +176,10 @@ mod tests {
     #[test]
     fn quadratic_roots() {
         let r = solve_quadratic(1.0, -3.0, 2.0);
-        assert_eq!(r.count, 2);
+        assert_eq!(r.as_slice().len(), 2);
         let r = solve_quadratic(0.0, 2.0, -1.0);
         assert_eq!(r.as_slice(), &[0.5]);
         let r = solve_quadratic(1.0, 0.0, 1.0);
-        assert_eq!(r.count, 0);
+        assert!(r.as_slice().is_empty());
     }
 }

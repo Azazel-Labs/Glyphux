@@ -1,7 +1,7 @@
 //! Edge segments (linear, quadratic and cubic Bézier curves), edge colors and signed distances.
 
 use crate::math::{Vec2, mix, non_zero_sign};
-use crate::solver::{solve_cubic_unit, solve_quadratic};
+use crate::solver::{solve_cubic_unit_normed, solve_quadratic};
 
 /// Color channels an edge contributes to (bit set of R=1, G=2, B=4).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
@@ -743,7 +743,8 @@ impl QuadData {
         let inv = |v: Vec2| {
             if v.is_zero() { 0.0 } else { 1.0 / v.length_squared() }
         };
-        // Mirrors the condition in `solve_cubic_unit` for using the cubic formula.
+        // Below this ratio the cubic formula is used; beyond it the cubic term is numerically
+        // irrelevant and the equation is solved as a quadratic.
         let cubic = ca != 0.0 && (cb / ca).abs() < 1e6;
         QuadData {
             ab,
@@ -920,9 +921,9 @@ impl QuadData {
         let cc = self.cc0 + qa.dot(self.br);
         let cd = qa.dot(self.ab);
         let roots = if self.inv_ca == 0.0 {
-            solve_cubic_unit(self.ca, self.cb, cc, cd)
+            solve_quadratic(self.cb, cc, cd).into()
         } else {
-            crate::solver::solve_cubic_unit_normed(
+            solve_cubic_unit_normed(
                 self.cb_n,
                 self.cc0_n + qa.dot(self.br) * self.inv_ca,
                 cd * self.inv_ca,

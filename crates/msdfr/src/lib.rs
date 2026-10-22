@@ -39,7 +39,7 @@ pub mod io;
 pub mod math;
 pub mod render;
 pub mod shape;
-pub mod solver;
+pub(crate) mod solver;
 pub mod transform;
 
 pub use batch::par_map;
