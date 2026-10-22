@@ -9,7 +9,7 @@
 
 use std::sync::Arc;
 
-use harfrust::{Buffer, BufferFlags, Direction, Feature, ShapeOptions, ShaperFont};
+use harfrust::{Buffer, BufferFlags, Direction, Feature, ShapeOptions, ShapePlan, ShapePlanKey, ShaperFont};
 use msdfr::Shape;
 use msdfr::io::font::{Font as OutlineFont, FontMetrics, FontScaling};
 use unicode_bidi::BidiInfo;
@@ -18,7 +18,8 @@ pub use harfrust;
 
 /// A font prepared for shaping (and for loading the outlines of the glyphs it shapes to).
 pub struct ShapingFont {
-    /// Id used in the atlas' [`crate::GlyphKey`]s; unique per font *and* variation instance.
+    /// Id used in the atlas' [`crate::GlyphKey`]s and to find [`Shaper`]'s cached plans;
+    /// unique per font *and* variation instance.
     pub id: u32,
     data: Arc<Vec<u8>>,
     index: u32,
@@ -111,10 +112,17 @@ pub struct ShapedLine {
     pub rtl: bool,
 }
 
-/// Reusable shaping state (buffers), and the features to apply.
+/// Shape plans kept by a [`Shaper`]; a line typically needs one or two.
+const PLAN_CACHE: usize = 32;
+
+/// Reusable shaping state (buffers, compiled shape plans), and the features to apply.
 pub struct Shaper {
     buffer: Option<Buffer>,
     probe: Option<Buffer>,
+    /// Compiled plans by font id, most recently used last. Building a plan (looking up and
+    /// compiling the font's lookups for a script, direction and feature set) costs far more
+    /// than shaping a short line with it.
+    plans: Vec<(u32, ShapePlan)>,
     /// OpenType features for every run, e.g. `"smcp".parse()`, `"-liga".parse()`,
     /// `"ss01=1".parse()`. Defaults (kerning, ligatures, marks, contextual forms…) apply
     /// without listing them.
@@ -134,6 +142,7 @@ impl Shaper {
         Shaper {
             buffer: Some(Buffer::new()),
             probe: Some(Buffer::new()),
+            plans: Vec::new(),
             features: Vec::new(),
             base_rtl: None,
         }
@@ -142,6 +151,9 @@ impl Shaper {
     /// Script of a character as the shaper sees it (`None` for common / inherited ones such
     /// as spaces, digits, punctuation and combining marks, which join their neighbors' run).
     fn script_of(&mut self, c: char) -> Option<harfrust::Script> {
+        if c.is_ascii() {
+            return c.is_ascii_alphabetic().then_some(harfrust::Script::LATIN);
+        }
         let mut b = self.probe.take().unwrap_or_default();
         b.clear();
         b.push(c as u32, 0);
@@ -149,6 +161,24 @@ impl Shaper {
         let s = b.script();
         self.probe = Some(b);
         s
+    }
+
+    /// Index in `self.plans` of the plan for `font` and the buffer's properties, compiled on
+    /// first use.
+    fn plan(&mut self, font: &ShapingFont, buf: &Buffer) -> usize {
+        let key = ShapePlanKey::new(&font.instance, buf.script(), buf.direction()).features(&self.features);
+        let found = self.plans.iter().rposition(|(id, p)| *id == font.id && key.matches(p));
+        let plan = if let Some(i) = found {
+            self.plans.remove(i)
+        } else {
+            if self.plans.len() >= PLAN_CACHE {
+                self.plans.remove(0);
+            }
+            let plan = ShapePlan::new(&font.instance, buf.direction(), buf.script(), None, &self.features);
+            (font.id, plan)
+        };
+        self.plans.push(plan);
+        self.plans.len() - 1
     }
 
     /// Shapes one line of text (no line breaks; a `\n` ends the line).
@@ -220,7 +250,10 @@ impl Shaper {
                 }
                 buf.set_flags(flags);
                 buf.guess_segment_properties();
-                if harfrust::shape(&shaper_font, &mut buf, ShapeOptions::new().features(&self.features)).is_ok() {
+                let i = self.plan(font, &buf);
+                let plan = &self.plans[i].1;
+                let options = ShapeOptions::new().plan(Some(plan)).features(&self.features);
+                if harfrust::shape(&shaper_font, &mut buf, options).is_ok() {
                     for (info, pos) in buf.glyph_infos().iter().zip(buf.glyph_positions()) {
                         out.glyphs.push(ShapedGlyph {
                             glyph: info.glyph_id,
