@@ -565,9 +565,7 @@ pub fn layout_text(
     line_height: Option<f32>,
     out: &mut Vec<GlyphInstance>,
 ) -> f32 {
-    let lh = line_height
-        .or_else(|| font.metrics().map(|m| m.line_height as f32))
-        .unwrap_or(1.2);
+    let lh = line_height.unwrap_or(font.metrics().line_height as f32);
     // Logical pixels per em.
     let em = units.text_px(style.size) / units.scale;
     let mut y = origin[1];

@@ -48,3 +48,13 @@ fn reused_plans_shape_like_fresh_ones() {
     warm.features = vec!["-calt".parse().unwrap()];
     assert_eq!((with, warm.shape_line(&latin, "->").glyphs.len()), (1, 2));
 }
+
+#[test]
+fn has_glyph_and_metrics() {
+    let latin = font(0, "Inter-Regular.otf");
+    let arabic = font(1, "NotoSansArabic-Subset.ttf");
+    assert!(latin.has_glyph('A') && latin.has_glyph('é') && !latin.has_glyph('ت'));
+    assert!(arabic.has_glyph('ت') && !arabic.has_glyph('永'));
+    let m = latin.metrics();
+    assert!(m.line_height > 1.0 && m.line_height < 1.5, "{m:?}");
+}

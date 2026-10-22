@@ -26,12 +26,15 @@ pub struct ShapingFont {
     variations: Vec<([u8; 4], f32)>,
     instance: harfrust::Font,
     units_per_em: f32,
+    metrics: FontMetrics,
 }
 
 impl ShapingFont {
     /// Parses a font (index `index` of a collection). `None` if it is not a font.
     pub fn new(id: u32, data: Arc<Vec<u8>>, index: u32) -> Option<Self> {
-        OutlineFont::from_bytes(&data, index, FontScaling::EmNormalized).ok()?;
+        let metrics = OutlineFont::from_bytes(&data, index, FontScaling::EmNormalized)
+            .ok()?
+            .metrics();
         let blob: Arc<dyn AsRef<[u8]> + Send + Sync> = data.clone();
         let instance = harfrust::Font::new(harfrust::font::Blob::from(blob), index)?;
         let units_per_em = instance.units_per_em().max(1) as f32;
@@ -42,6 +45,7 @@ impl ShapingFont {
             variations: Vec::new(),
             instance,
             units_per_em,
+            metrics,
         })
     }
 
@@ -58,9 +62,14 @@ impl ShapingFont {
             .instance_builder()
             .variations(variations.iter().map(|&(t, v)| (t, v)))
             .build();
+        if let Some(f) = self.outlines() {
+            self.metrics = f.metrics();
+        }
         self
     }
 
+    /// The outline loader: parses the font's tables again (a few microseconds), which is
+    /// fine for loading the outline of a glyph new to the atlas, not for per-character work.
     fn outlines(&self) -> Option<OutlineFont<'_>> {
         let mut f = OutlineFont::from_bytes(&self.data, self.index, FontScaling::EmNormalized).ok()?;
         for (tag, v) in &self.variations {
@@ -79,14 +88,15 @@ impl ShapingFont {
         Some(g.shape)
     }
 
-    /// Whether the font maps `c` to a glyph (for choosing a fallback font per line).
+    /// Whether the font maps `c` to a glyph (for choosing a fallback font per line), through
+    /// the shaper's own (cached) character map.
     pub fn has_glyph(&self, c: char) -> bool {
-        self.outlines().and_then(|f| f.glyph_index(c)).is_some()
+        self.instance.charmap().map_unicode(c).is_some()
     }
 
     /// Ascender, descender, line height etc. in em units.
-    pub fn metrics(&self) -> Option<FontMetrics> {
-        Some(self.outlines()?.metrics())
+    pub fn metrics(&self) -> FontMetrics {
+        self.metrics
     }
 }
 
