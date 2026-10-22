@@ -354,6 +354,10 @@ impl Segment {
     /// if `p` lies "behind" the start point (relative to the start tangent), and above 1 if
     /// it lies beyond the end point. Positive distance = right-hand side of the direction of
     /// travel (the filled side under this crate's orientation convention).
+    ///
+    /// Each call prepares the curve from scratch (for a cubic that is dozens of
+    /// transcendental evaluations); for many queries, prepare a shape once
+    /// ([`crate::PreparedShape`]) or generate a field.
     pub fn signed_distance(&self, p: Vec2) -> (SignedDistance, f64) {
         match *self {
             Segment::Linear([a, b]) => line_signed_distance(a, b, p),
@@ -981,7 +985,10 @@ const CUBIC_SAMPLE_GAP: f64 = 0.25;
 ///
 /// Unlike Newton iteration from a handful of fixed starting points (msdfgen's approach), this
 /// cannot miss the global minimum of a tight loop or converge to a local maximum.
-#[derive(Clone, Copy, Debug)]
+///
+/// About 5 KB (per-interval data for the subdivision): not `Copy`, so it is never copied by
+/// accident; prepared shapes box it.
+#[derive(Clone, Debug)]
 pub(crate) struct CubicData {
     p0: Vec2,
     a: Vec2,
