@@ -106,37 +106,41 @@ fn face_index(data: &[u8], postscript_name: Option<&str>) -> Result<u32, String>
         .ok_or_else(|| format!("no face named {want}"))
 }
 
-fn log(s: &str) {
-    web_sys::console::log_1(&s.into());
+/// Sets the text of the page element `id`.
+fn show(id: &str, text: &str) {
+    if let Some(el) = web_sys::window()
+        .and_then(|w| w.document())
+        .and_then(|d| d.get_element_by_id(id))
+    {
+        el.set_text_content(Some(text));
+    }
 }
 
 /// Logs a problem and shows it in the page's note under the controls.
 fn report(s: &str) {
     web_sys::console::error_1(&s.into());
-    if let Some(el) = web_sys::window()
-        .and_then(|w| w.document())
-        .and_then(|d| d.get_element_by_id("note"))
-    {
-        el.set_text_content(Some(s));
-    }
+    show("note", s);
 }
 
 #[wasm_bindgen(start)]
 pub fn start() {
+    // With panic = "abort" a panic surfaces as an opaque "unreachable" trap and the animation
+    // loop stops: say what happened, in the console and on the page.
+    std::panic::set_hook(Box::new(|info| {
+        let msg = format!("msdfr demo stopped: {info}");
+        web_sys::console::error_1(&msg.as_str().into());
+        show("status", &msg);
+    }));
     wasm_bindgen_futures::spawn_local(async {
         if let Err(e) = run().await {
-            log(&format!("msdfr demo: {e}"));
-            if let Some(el) = web_sys::window()
-                .and_then(|w| w.document())
-                .and_then(|d| d.get_element_by_id("status"))
-            {
-                el.set_text_content(Some(&format!("Could not start: {e}")));
-            }
+            web_sys::console::error_1(&format!("msdfr demo: {e}").into());
+            show("status", &format!("Could not start: {e}"));
         }
     });
 }
 
 struct State {
+    window: web_sys::Window,
     device: wgpu::Device,
     queue: wgpu::Queue,
     surface: wgpu::Surface<'static>,
@@ -180,6 +184,8 @@ async fn run() -> Result<(), String> {
         })
         .await
         .map_err(|e| format!("device: {e}"))?;
+    // wgpu's default handler panics on validation errors; report them instead.
+    device.on_uncaptured_error(Arc::new(|e| report(&format!("GPU error: {e}"))));
     let caps = surface.get_capabilities(&adapter);
     // Prefer an sRGB view of the swapchain (colors are blended in linear space).
     let format = caps.formats[0];
@@ -204,6 +210,7 @@ async fn run() -> Result<(), String> {
     scene.enable_profiling(&device, &queue);
     let start = window.performance().map_or(0.0, |p| p.now());
     let state = Rc::new(RefCell::new(State {
+        window: window.clone(),
         device,
         queue,
         surface,
@@ -218,9 +225,13 @@ async fn run() -> Result<(), String> {
     let f: FrameCallback = Rc::new(RefCell::new(None));
     let g = f.clone();
     *g.borrow_mut() = Some(Closure::new(move |now: f64| {
-        frame(&mut state.borrow_mut(), now);
-        let w = web_sys::window().unwrap();
-        let _ = w.request_animation_frame(f.borrow().as_ref().unwrap().as_ref().unchecked_ref());
+        let mut s = state.borrow_mut();
+        frame(&mut s, now);
+        if let Some(next) = f.borrow().as_ref()
+            && s.window.request_animation_frame(next.as_ref().unchecked_ref()).is_err()
+        {
+            report("requestAnimationFrame failed: the animation stopped");
+        }
     }));
     window
         .request_animation_frame(g.borrow().as_ref().unwrap().as_ref().unchecked_ref())
