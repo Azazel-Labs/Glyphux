@@ -118,14 +118,15 @@ impl Shape {
         let mut shape = Shape::new();
         let bytes = text.as_bytes();
         let mut i = 0;
-        let mut colored = false;
         while i < bytes.len() {
-            let c = bytes[i] as char;
-            if c.is_whitespace() {
+            // Bytes, not chars: every token starts with an ASCII byte, and the directive scan
+            // below stops only at ASCII bytes, so slices always fall on char boundaries.
+            let c = bytes[i];
+            if c.is_ascii_whitespace() {
                 i += 1;
-            } else if c == '@' {
+            } else if c == b'@' {
                 let start = i;
-                while i < bytes.len() && !(bytes[i] as char).is_whitespace() && bytes[i] != b'{' {
+                while i < bytes.len() && !bytes[i].is_ascii_whitespace() && bytes[i] != b'{' {
                     i += 1;
                 }
                 match &text[start..i] {
@@ -133,7 +134,7 @@ impl Shape {
                     "@y-down" | "@invert-y" => shape.inverse_y_axis = true,
                     other => return err(format!("unknown directive '{other}'"), start),
                 }
-            } else if c == '{' {
+            } else if c == b'{' {
                 let start = i + 1;
                 let mut depth = 0;
                 let mut j = start;
@@ -148,15 +149,14 @@ impl Shape {
                 if j >= bytes.len() {
                     return err("unterminated contour", i);
                 }
-                let (contour, had_colors) = parse_contour(&text[start..j], start)?;
-                colored |= had_colors;
+                let contour = parse_contour(&text[start..j], start)?;
                 shape.contours.push(contour);
                 i = j + 1;
             } else {
+                let c = text[i..].chars().next().unwrap_or_default();
                 return err(format!("unexpected character '{c}'"), i);
             }
         }
-        let _ = colored;
         Ok(shape)
     }
 
@@ -242,7 +242,7 @@ fn split_items(s: &str, base: usize) -> Vec<(&str, usize)> {
     out.into_iter().filter(|(t, _)| !t.trim().is_empty()).collect()
 }
 
-fn parse_contour(s: &str, base: usize) -> Result<(Contour, bool), ParseError> {
+fn parse_contour(s: &str, base: usize) -> Result<Contour, ParseError> {
     let mut contour = Contour::new();
     let items = split_items(s, base);
     let mut parsed = Vec::with_capacity(items.len());
@@ -252,7 +252,6 @@ fn parse_contour(s: &str, base: usize) -> Result<(Contour, bool), ParseError> {
     let mut first: Option<Vec2> = None;
     let mut last: Option<Vec2> = None;
     let mut pending: Option<(Option<EdgeColor>, Vec<Vec2>)> = None;
-    let mut colored = false;
     for (item, pos) in parsed {
         match item {
             Item::Spec { color, controls } => {
@@ -262,7 +261,6 @@ fn parse_contour(s: &str, base: usize) -> Result<(Contour, bool), ParseError> {
                 if pending.is_some() {
                     return err("two consecutive edge specifications", pos);
                 }
-                colored |= color.is_some();
                 pending = Some((color, controls));
             }
             Item::Point(_) | Item::Close => {
@@ -300,12 +298,20 @@ fn parse_contour(s: &str, base: usize) -> Result<(Contour, bool), ParseError> {
             contour.add_edge(Edge::line(l, f));
         }
     }
-    Ok((contour, colored))
+    Ok(contour)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn non_ascii_is_an_error() {
+        // U+00E0 is encoded C3 A0, and 0xA0 read as a char is a no-break space.
+        for t in ["@\u{e0}{ 0,0; 1,0; 0,1; # }", "\u{85}{ 0,0; 1,0; 0,1; # }", "\u{e0}"] {
+            assert!(Shape::from_description(t).is_err(), "{t:?}");
+        }
+    }
 
     #[test]
     fn parse_examples() {
