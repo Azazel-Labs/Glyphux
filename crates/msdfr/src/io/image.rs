@@ -196,19 +196,57 @@ pub fn read_fl32(bytes: &[u8]) -> Option<(u32, u32, usize, Vec<f32>)> {
     }
     let h = u32::from_le_bytes(bytes[4..8].try_into().ok()?);
     let w = u32::from_le_bytes(bytes[8..12].try_into().ok()?);
-    let n = bytes[12] as usize;
-    let count = w as usize * h as usize * n;
-    if bytes.len() < 16 + count * 4 {
+    let n = usize::from(bytes[12]);
+    if !(1..=4).contains(&n) {
         return None;
     }
-    let mut data = vec![0f32; count];
-    let row = w as usize * n;
-    for y in 0..h as usize {
-        let src_row = h as usize - 1 - y;
-        for i in 0..row {
-            let o = 16 + (src_row * row + i) * 4;
-            data[y * row + i] = f32::from_le_bytes(bytes[o..o + 4].try_into().ok()?);
+    // Sizes come from the file: check them before trusting them.
+    let row = usize::try_from(w).ok()?.checked_mul(n)?;
+    let count = row.checked_mul(usize::try_from(h).ok()?)?;
+    let body = bytes.get(16..16 + count.checked_mul(4)?)?;
+    let mut data = Vec::with_capacity(count);
+    if row > 0 {
+        // Rows are stored bottom to top.
+        for src in body.chunks_exact(row * 4).rev() {
+            data.extend(
+                src.chunks_exact(4)
+                    .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])),
+            );
         }
     }
     Some((w, h, n, data))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fl32_round_trip() {
+        let mut b = Bitmap::<3>::new(3, 2);
+        for (i, v) in b.data_mut().iter_mut().enumerate() {
+            *v = i as f32;
+        }
+        let (w, h, n, data) = read_fl32(&encode(&b, ImageFormat::Fl32)).unwrap();
+        assert_eq!((w, h, n), (3, 2, 3));
+        assert_eq!(data, b.data());
+    }
+
+    #[test]
+    fn fl32_rejects_bad_headers() {
+        let header = |h: u32, w: u32, n: u8| {
+            let mut v = b"FL32".to_vec();
+            v.extend_from_slice(&h.to_le_bytes());
+            v.extend_from_slice(&w.to_le_bytes());
+            v.extend_from_slice(&[n, 0, 0, 0]);
+            v
+        };
+        // Sizes whose product wraps around, no channels, too many channels, truncated data.
+        assert!(read_fl32(&header(0x8000_0000, 0x8000_0000, 64)).is_none());
+        assert!(read_fl32(&header(u32::MAX, u32::MAX, 4)).is_none());
+        assert!(read_fl32(&header(1, 1, 0)).is_none());
+        assert!(read_fl32(&header(1, 1, 5)).is_none());
+        assert!(read_fl32(&header(2, 2, 1)).is_none());
+        assert_eq!(read_fl32(&header(0, 5, 1)), Some((5, 0, 1, Vec::new())));
+    }
 }
