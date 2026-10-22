@@ -82,7 +82,7 @@ pub fn encode<const N: usize>(bitmap: &Bitmap<N>, format: ImageFormat) -> Vec<u8
             out
         }
         ImageFormat::Rgba => {
-            let mut out = Vec::with_capacity(12 + (w * h * 4) as usize);
+            let mut out = Vec::with_capacity(12 + w as usize * h as usize * 4);
             out.extend_from_slice(b"RGBA");
             out.extend_from_slice(&w.to_be_bytes());
             out.extend_from_slice(&h.to_be_bytes());
@@ -144,12 +144,15 @@ pub fn save_fl32<const N: usize>(bitmap: &Bitmap<N>, path: impl AsRef<Path>) -> 
 
 fn encode_bmp<const N: usize>(bitmap: &Bitmap<N>) -> Vec<u8> {
     let (w, h) = (bitmap.width(), bitmap.height());
-    let bpp: u32 = if N == 4 { 4 } else { 3 };
-    let row_size = (w * bpp + 3) & !3;
-    let data_size = row_size * h;
-    let mut out = Vec::with_capacity(54 + data_size as usize);
+    let bpp: usize = if N == 4 { 4 } else { 3 };
+    let row_size = (w as usize * bpp + 3) & !3;
+    let data_size = row_size * h as usize;
+    // The format's size fields are 32-bit; beyond that they saturate (no reader can load
+    // such a file anyway), but the pixels are still written.
+    let field = |v: usize| u32::try_from(v).unwrap_or(u32::MAX);
+    let mut out = Vec::with_capacity(54 + data_size);
     out.extend_from_slice(b"BM");
-    out.extend_from_slice(&(54 + data_size).to_le_bytes());
+    out.extend_from_slice(&field(54 + data_size).to_le_bytes());
     out.extend_from_slice(&[0, 0, 0, 0]);
     out.extend_from_slice(&54u32.to_le_bytes());
     out.extend_from_slice(&40u32.to_le_bytes());
@@ -158,7 +161,7 @@ fn encode_bmp<const N: usize>(bitmap: &Bitmap<N>) -> Vec<u8> {
     out.extend_from_slice(&1u16.to_le_bytes());
     out.extend_from_slice(&((bpp * 8) as u16).to_le_bytes());
     out.extend_from_slice(&0u32.to_le_bytes());
-    out.extend_from_slice(&data_size.to_le_bytes());
+    out.extend_from_slice(&field(data_size).to_le_bytes());
     out.extend_from_slice(&2835u32.to_le_bytes());
     out.extend_from_slice(&2835u32.to_le_bytes());
     out.extend_from_slice(&0u32.to_le_bytes());
@@ -181,7 +184,7 @@ fn encode_bmp<const N: usize>(bitmap: &Bitmap<N>) -> Vec<u8> {
                 ]),
             }
         }
-        while (out.len() - start) < row_size as usize {
+        while (out.len() - start) < row_size {
             out.push(0);
         }
     }

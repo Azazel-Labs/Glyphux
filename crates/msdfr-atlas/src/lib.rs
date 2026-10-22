@@ -559,7 +559,9 @@ fn layout_at(font: &FontGeometry, cfg: &AtlasConfig, scale: f64) -> Option<Atlas
             .max(1);
         let rows = count.div_ceil(cols).max(1);
         let sp = cfg.spacing;
-        let need = (cols * (cw + sp) - sp, rows * (ch + sp) - sp);
+        // Sizes come from the configuration: too large a grid doesn't fit (rather than wrap).
+        let extent = |n: u32, cell: u32| n.checked_mul(cell.checked_add(sp)?).map(|v| v - sp);
+        let need = (extent(cols, cw)?, extent(rows, ch)?);
         (width, height) = match cfg.dimensions {
             Some((w, h)) if w < need.0 || h < need.1 => return None,
             Some(d) => d,
@@ -582,12 +584,12 @@ fn layout_at(font: &FontGeometry, cfg: &AtlasConfig, scale: f64) -> Option<Atlas
         let sp = cfg.spacing;
         let sizes: Vec<(u32, u32)> = boxes
             .iter()
-            .map(|b| b.map_or((0, 0), |(w, h, _)| (w + sp, h + sp)))
-            .collect();
+            .map(|b| b.map_or(Some((0, 0)), |(w, h, _)| Some((w.checked_add(sp)?, h.checked_add(sp)?))))
+            .collect::<Option<_>>()?;
         let positions;
         (width, height, positions) = if let Some((w, h)) = cfg.dimensions {
             // The spacing after the last column/row is not needed.
-            (w, h, pack::pack(&sizes, w + sp, h + sp)?)
+            (w, h, pack::pack(&sizes, w.checked_add(sp)?, h.checked_add(sp)?)?)
         } else {
             pack::pack_auto(&sizes, cfg.constraint)
         };
