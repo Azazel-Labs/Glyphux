@@ -84,7 +84,7 @@ fn main() {
         &mut quads,
     );
     let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
-    atlas.flush(&device, &queue, &mut enc);
+    atlas.flush(&device, &mut enc);
     renderer.prepare(&device, &queue, &atlas, [w as f32, h as f32], &quads);
     {
         let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {

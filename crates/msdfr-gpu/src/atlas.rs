@@ -597,15 +597,17 @@ impl GlyphAtlas {
     }
 
     /// Generates all queued glyphs into the atlas (one batch). Returns how many.
-    pub fn flush(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder) -> usize {
-        self.flush_profiled(device, queue, encoder, None)
+    ///
+    /// The upload is recorded into `encoder`, in order with the passes, so a frame may flush
+    /// any number of times before submitting.
+    pub fn flush(&mut self, device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder) -> usize {
+        self.flush_profiled(device, encoder, None)
     }
 
     /// [`Self::flush`] with GPU timestamps around its passes (distance, correction, store).
     pub fn flush_profiled(
         &mut self,
         device: &wgpu::Device,
-        queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         mut profiler: Option<&mut crate::profile::GpuProfiler>,
     ) -> usize {
@@ -625,7 +627,7 @@ impl GlyphAtlas {
             .iter()
             .filter_map(|p| self.ready.remove(&p.id).flatten().map(|j| *j))
             .collect();
-        let batch = self.generator.upload(device, queue, &jobs);
+        let batch = self.generator.upload(device, encoder, &jobs);
         self.generator.encode_profiled(encoder, &batch, profiler.as_deref_mut());
         self.encode_store(device, encoder, &batch, profiler);
         self.stats.generated += pending.len() as u64;

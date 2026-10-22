@@ -68,8 +68,8 @@ fn compare(
             ..FieldJob::new(&prepared[i], &gpu[i], xfs[i], size, size, kind)
         })
         .collect();
-    let batch = generator.prepare(device, queue, &jobs);
     let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+    let batch = generator.prepare(device, &mut enc, &jobs);
     generator.encode(&mut enc, &batch);
     queue.submit([enc.finish()]);
     let field = read_field(device, queue, &batch);

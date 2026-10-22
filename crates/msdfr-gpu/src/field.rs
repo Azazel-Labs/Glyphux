@@ -296,17 +296,55 @@ impl Slot {
         self.buffer.as_ref().unwrap()
     }
 
-    /// Uploads `bytes` (at least 16, zero padded) and returns the buffer and the bound size.
-    fn write(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, bytes: &[u8]) -> (wgpu::Buffer, u64) {
-        let zero = [0u8; 16];
-        let bytes = if bytes.is_empty() { &zero[..] } else { bytes };
+    /// Queues an upload of `bytes` (at least 16, zero padded) and returns the buffer and the
+    /// bound size.
+    fn write<'a>(&mut self, device: &wgpu::Device, uploads: &mut Uploads<'a>, bytes: &'a [u8]) -> (wgpu::Buffer, u64) {
+        const ZERO: [u8; 16] = [0; 16];
+        let bytes = if bytes.is_empty() { &ZERO[..] } else { bytes };
         let b = self.ensure(device, bytes.len() as u64).clone();
-        queue.write_buffer(&b, 0, bytes);
+        uploads.parts.push((b.clone(), bytes));
         (b, bytes.len() as u64)
     }
 }
 
-/// The buffers of one batch in flight.
+/// Buffer uploads recorded into the command encoder, so they happen in order with the passes
+/// that use them. (`Queue::write_buffer` would apply every upload before the whole
+/// submission, so a later batch recorded into the same submission would overwrite the
+/// buffers of an earlier one before its passes ran.)
+#[derive(Default)]
+struct Uploads<'a> {
+    parts: Vec<(wgpu::Buffer, &'a [u8])>,
+}
+
+impl Uploads<'_> {
+    /// Copies everything through one staging buffer.
+    fn record(self, device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder) {
+        // Every part is a whole number of 4-byte records, as copies require.
+        let size: u64 = self.parts.iter().map(|(_, b)| b.len() as u64).sum();
+        let staging = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("msdfr upload"),
+            size: size.max(wgpu::COPY_BUFFER_ALIGNMENT),
+            usage: wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: true,
+        });
+        {
+            let mut view = staging.get_mapped_range_mut(..).expect("mapped at creation");
+            let mut offset = 0;
+            for (_, bytes) in &self.parts {
+                view.slice(offset..offset + bytes.len()).copy_from_slice(bytes);
+                offset += bytes.len();
+            }
+        }
+        staging.unmap();
+        let mut offset = 0;
+        for (buffer, bytes) in &self.parts {
+            encoder.copy_buffer_to_buffer(&staging, offset, buffer, 0, Some(bytes.len() as u64));
+            offset += bytes.len() as u64;
+        }
+    }
+}
+
+/// The generator's buffers, reused from batch to batch.
 struct BufferSet {
     glyphs: Slot,
     work: Slot,
@@ -339,10 +377,6 @@ impl BufferSet {
     }
 }
 
-/// Number of buffer sets cycled through: batches recorded into the same submission must not
-/// share buffers (their uploads all land before the submission runs).
-pub const BATCHES_PER_SUBMIT: usize = 2;
-
 pub(crate) fn sized(buffer: &wgpu::Buffer, size: u64) -> wgpu::BindingResource<'_> {
     wgpu::BindingResource::Buffer(wgpu::BufferBinding {
         buffer,
@@ -354,7 +388,8 @@ pub(crate) fn sized(buffer: &wgpu::Buffer, size: u64) -> wgpu::BindingResource<'
 /// The uploaded data of a batch of jobs and its output buffer.
 pub struct FieldBatch {
     /// `vec4<f32>` per texel: channels as configured (MSDF in xyz, true distance in w). The
-    /// buffer is reused by later batches and may be larger than this batch.
+    /// buffer is reused by later batches (whose commands overwrite it) and may be larger than
+    /// this batch.
     pub field: wgpu::Buffer,
     pub layouts: Vec<FieldLayout>,
     pub texels: u32,
@@ -371,8 +406,7 @@ pub struct FieldBatch {
 
 /// Compiled pipelines for the distance and error correction passes.
 pub struct FieldGenerator {
-    sets: Vec<BufferSet>,
-    next_set: usize,
+    buffers: BufferSet,
     fine: wgpu::ComputePipeline,
     layout: wgpu::BindGroupLayout,
     ec_layout: wgpu::BindGroupLayout,
@@ -463,8 +497,7 @@ impl FieldGenerator {
             })
         };
         FieldGenerator {
-            sets: (0..BATCHES_PER_SUBMIT).map(|_| BufferSet::new()).collect(),
-            next_set: 0,
+            buffers: BufferSet::new(),
             fine: pipeline(&layout, "fine"),
             ec_corners: pipeline(&ec_layout, "ec_corners"),
             ec_protect: pipeline(&ec_layout, "ec_protect"),
@@ -475,17 +508,26 @@ impl FieldGenerator {
         }
     }
 
-    /// Bins and uploads a batch of jobs (one dispatch evaluates all of them).
-    ///
-    /// GPU buffers are reused from batch to batch, so at most [`BATCHES_PER_SUBMIT`] batches
-    /// may be recorded before their commands are submitted.
-    pub fn prepare(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, jobs: &[FieldJob<'_>]) -> FieldBatch {
+    /// Bins a batch of jobs and records their upload into `encoder` (one dispatch evaluates
+    /// all of them). Record the batch's passes ([`Self::encode`]) into the same encoder, or a
+    /// later one, before preparing the next batch: batches share the generator's buffers.
+    pub fn prepare(
+        &mut self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        jobs: &[FieldJob<'_>],
+    ) -> FieldBatch {
         let prepared: Vec<PreparedJob> = jobs.iter().map(prepare_job).collect();
-        self.upload(device, queue, &prepared)
+        self.upload(device, encoder, &prepared)
     }
 
-    /// Uploads jobs whose CPU part is done (see [`prepare_job`]).
-    pub fn upload(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, jobs: &[PreparedJob]) -> FieldBatch {
+    /// [`Self::prepare`] for jobs whose CPU part is done (see [`prepare_job`]).
+    pub fn upload(
+        &mut self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        jobs: &[PreparedJob],
+    ) -> FieldBatch {
         let mut glyphs = Vec::with_capacity(jobs.len());
         let mut work = Vec::new();
         let mut edges = Vec::new();
@@ -542,16 +584,16 @@ impl FieldGenerator {
                 });
             }
         }
-        let n_sets = self.sets.len();
-        let set = &mut self.sets[self.next_set];
-        self.next_set = (self.next_set + 1) % n_sets;
-        let glyph_buf = set.glyphs.write(device, queue, cast_slice(&glyphs));
-        let work_buf = set.work.write(device, queue, cast_slice(&work));
-        let edge_buf = set.edges.write(device, queue, cast_slice(&edges));
-        let contour_buf = set.contours.write(device, queue, cast_slice(&contours));
-        let curve_buf = set.curves.write(device, queue, cast_slice(&curves));
-        let tile_buf = set.tiles.write(device, queue, cast_slice(&tile_groups));
-        let cand_buf = set.cands.write(device, queue, cast_slice(&cands));
+        let set = &mut self.buffers;
+        let mut uploads = Uploads::default();
+        let up = &mut uploads;
+        let glyph_buf = set.glyphs.write(device, up, cast_slice(&glyphs));
+        let work_buf = set.work.write(device, up, cast_slice(&work));
+        let edge_buf = set.edges.write(device, up, cast_slice(&edges));
+        let contour_buf = set.contours.write(device, up, cast_slice(&contours));
+        let curve_buf = set.curves.write(device, up, cast_slice(&curves));
+        let tile_buf = set.tiles.write(device, up, cast_slice(&tile_groups));
+        let cand_buf = set.cands.write(device, up, cast_slice(&cands));
         let field_size = (texels.max(1) as u64) * 16;
         let field = set.field.ensure(device, field_size).clone();
         let (ec_bind_group, stencil) = if any_ec {
@@ -560,7 +602,7 @@ impl FieldGenerator {
             if corners.is_empty() {
                 corners.push(u32::MAX);
             }
-            let corner_buf = set.corners.write(device, queue, cast_slice(&corners));
+            let corner_buf = set.corners.write(device, up, cast_slice(&corners));
             let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("msdfr error correction"),
                 layout: &self.ec_layout,
@@ -603,6 +645,7 @@ impl FieldGenerator {
         } else {
             (None, None)
         };
+        uploads.record(device, encoder);
         let corner_workgroups = split_workgroups((corners.len() as u32).div_ceil(64));
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("msdfr distance"),

@@ -715,9 +715,7 @@ impl Scene {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("msdfr demo"),
         });
-        self.last_generated = self
-            .atlas
-            .flush_profiled(device, queue, &mut encoder, self.profiler.as_mut());
+        self.last_generated = self.atlas.flush_profiled(device, &mut encoder, self.profiler.as_mut());
         #[cfg(not(target_arch = "wasm32"))]
         {
             self.cpu_ms = start.elapsed().as_secs_f64() * 1e3;

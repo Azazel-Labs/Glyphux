@@ -144,7 +144,7 @@ fn main() {
             y += size * 1.65;
         }
         let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
-        let generated = atlas.flush(&device, &queue, &mut enc);
+        let generated = atlas.flush(&device, &mut enc);
         queue.submit([enc.finish()]);
         if generated == 0 && atlas.probes_pending() == 0 {
             let st = atlas.stats();

@@ -77,7 +77,7 @@ let mut quads = Vec::new();
 layout_text(&mut atlas, &mut shaper, &font, "Hello, عالم", &style, &units, [20.0, 80.0], 600.0,
             Align::Start, None, &mut quads);
 let mut encoder = device.create_command_encoder(&Default::default());
-atlas.flush(&device, &queue, &mut encoder);    // generates the glyphs missed this frame
+atlas.flush(&device, &mut encoder);            // generates the glyphs missed this frame
 text.prepare(&device, &queue, &atlas, [w, h], &quads);
 {
     let mut pass = encoder.begin_render_pass(/* your target */);
@@ -166,8 +166,9 @@ outline, measures its bounds and reserves its atlas rectangle — about 5 µs, a
 coloring, curve preparation, tile binning, corner protection and the detail probe — is queued
 to worker threads (`worker_threads`, default: cores − 1, at most 4) and runs while the app
 goes on with its frame. `flush` joins them: it runs any job no worker has started yet itself,
-waits for the rest, uploads into a persistent ring of buffers (`BATCHES_PER_SUBMIT` sets, grown
-to the next power of two, never recreated in steady state) and records the passes. Every glyph
+waits for the rest, records the upload into persistent buffers (grown to the next power of
+two, never recreated in steady state) and records the passes. Uploads go through the command
+encoder, so any number of flushes may be recorded before a submit. Every glyph
 requested in a frame is generated in that frame; nothing arrives a frame late except the
 detail probe's occasional upgrade. On `wasm32` (no threads) the same work runs inside `flush`.
 
@@ -184,7 +185,7 @@ rasterizer here.
 
 ```rust
 let mut prof = msdfr_gpu::GpuProfiler::new(&device, &queue, 8);   // None without timestamps
-atlas.flush_profiled(&device, &queue, &mut encoder, prof.as_mut()); // distance, correction, store
+atlas.flush_profiled(&device, &mut encoder, prof.as_mut());         // distance, correction, store
 let scope = prof.as_mut().and_then(|p| p.scope("text"));           // your own passes too
 // ... begin_render_pass with timestamp_writes: scope.map(|s| prof.as_ref().unwrap().render_writes(s))
 let readback = prof.as_mut().and_then(|p| p.resolve(&device, &mut encoder));
@@ -205,9 +206,9 @@ let mut generator = FieldGenerator::new(&device);
 let prepared = msdfr::PreparedShape::new(&shape);   // colored shape
 let gpu = GpuShape::new(&prepared);
 let jobs = [FieldJob::new(&prepared, &gpu, transform, 32, 32, FieldKind::MSDF)];
-let batch = generator.prepare(&device, &queue, &jobs); // bins on the CPU, uploads
 let mut enc = device.create_command_encoder(&Default::default());
-generator.encode(&mut enc, &batch);                   // fine pass + error correction
+let batch = generator.prepare(&device, &mut enc, &jobs); // bins on the CPU, records the upload
+generator.encode(&mut enc, &batch);                     // fine pass + error correction
 queue.submit([enc.finish()]);
 // batch.field: storage buffer of vec4<f32> per texel; batch.layouts[i] says where job i is.
 // read_field(&device, &queue, &batch) copies it back (native, blocking).
@@ -216,8 +217,9 @@ queue.submit([enc.finish()]);
 `FieldJob` also has `overlap`, `error_correction` (`msdfr::ErrorCorrectionConfig`, all of
 msdfgen's modes), `band` (narrow band in texels) and `atlas_origin`. To do the CPU part on
 your own threads, call `prepare_job(&job)` there (returns an owned `PreparedJob`) and pass the
-results to `generator.upload(&device, &queue, &prepared)`. The generator keeps
-`BATCHES_PER_SUBMIT` buffer sets in a ring, so at most that many batches may be in one submit.
+results to `generator.upload(&device, &mut encoder, &prepared)`. Batches share the
+generator's buffers: record a batch's passes before preparing the next one, and copy
+`batch.field` out before a later batch's commands overwrite it.
 
 ## Validation
 

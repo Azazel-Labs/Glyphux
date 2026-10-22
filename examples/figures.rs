@@ -1068,7 +1068,7 @@ fn atlas(inter: &[u8]) -> Result<Vec<u8>, String> {
         }
     }
     let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
-    atlas.flush(&device, &queue, &mut enc);
+    atlas.flush(&device, &mut enc);
     queue.submit([enc.finish()]);
     let size = atlas.config().size;
     let px = read_layer(&device, &queue, atlas.texture(), size);

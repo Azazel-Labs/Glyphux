@@ -16,10 +16,7 @@ pub mod units;
 mod workers;
 
 pub use atlas::{AtlasConfig, AtlasGlyph, AtlasStats, GlyphAtlas, GlyphKey};
-pub use field::{
-    BATCHES_PER_SUBMIT, FieldBatch, FieldGenerator, FieldJob, FieldLayout, PreparedJob, TILE, prepare_job,
-    shader_source,
-};
+pub use field::{FieldBatch, FieldGenerator, FieldJob, FieldLayout, PreparedJob, TILE, prepare_job, shader_source};
 #[cfg(not(target_arch = "wasm32"))]
 pub use field::{read_field, read_stencil};
 pub use msdfr;
