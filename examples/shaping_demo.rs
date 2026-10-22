@@ -86,7 +86,7 @@ fn main() {
     if let Ok(l) = std::env::var("MIN_LEVEL") {
         config.min_level = l.parse().unwrap();
     }
-    let mut atlas = GlyphAtlas::new(&device, config);
+    let mut atlas = GlyphAtlas::new(&device, config).expect("atlas configuration");
     let mut renderer = TextRenderer::new(&device, format);
     let mut shaper = Shaper::new();
     let mut data_cache: Vec<(String, Arc<Vec<u8>>)> = Vec::new();

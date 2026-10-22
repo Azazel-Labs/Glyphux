@@ -15,7 +15,7 @@ pub mod text;
 pub mod units;
 mod workers;
 
-pub use atlas::{AtlasConfig, AtlasGlyph, AtlasStats, GlyphAtlas, GlyphKey};
+pub use atlas::{AtlasConfig, AtlasConfigError, AtlasGlyph, AtlasStats, GlyphAtlas, GlyphKey};
 pub use field::{FieldBatch, FieldGenerator, FieldJob, FieldLayout, PreparedJob, TILE, prepare_job, shader_source};
 #[cfg(not(target_arch = "wasm32"))]
 pub use field::{read_field, read_stencil};
@@ -107,7 +107,7 @@ mod shader_validation {
         ] {
             validate(
                 &format!("atlas store ({format:?})"),
-                &crate::atlas::store_shader_source(format),
+                &crate::atlas::store_shader_source(format).expect("supported format"),
             );
         }
     }

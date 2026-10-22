@@ -430,7 +430,7 @@ impl Scene {
             primary: 0,
             cache: ShapeCache::default(),
             shaper: Shaper::new(),
-            atlas: GlyphAtlas::new(device, config),
+            atlas: GlyphAtlas::new(device, config).map_err(|e| e.to_string())?,
             renderer: TextRenderer::new(device, target),
             instances: Vec::new(),
             text: DEFAULT_TEXT.to_owned(),

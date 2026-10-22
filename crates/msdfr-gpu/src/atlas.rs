@@ -22,7 +22,9 @@ pub struct AtlasConfig {
     pub size: u32,
     /// Number of layers of the texture array.
     pub layers: u32,
-    /// `Rgba8Unorm` (compact) or `Rgba16Float` (more precision for wide ranges).
+    /// `Rgba8Unorm` (compact) or `Rgba16Float` (more precision for wide ranges); also
+    /// `Rgba32Float` on devices with [`wgpu::Features::FLOAT32_FILTERABLE`] (the text shader
+    /// filters the atlas).
     pub format: wgpu::TextureFormat,
     /// Field type; MTSDF keeps the true distance in alpha (for outlines, glows, shadows).
     pub kind: FieldKind,
@@ -250,7 +252,9 @@ pub struct AtlasStats {
 }
 
 impl GlyphAtlas {
-    pub fn new(device: &wgpu::Device, config: AtlasConfig) -> Self {
+    /// Creates the atlas texture and pipelines, after checking `config` against the device.
+    pub fn new(device: &wgpu::Device, config: AtlasConfig) -> Result<Self, AtlasConfigError> {
+        config.validate(device)?;
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("msdfr atlas"),
             size: wgpu::Extent3d {
@@ -273,7 +277,7 @@ impl GlyphAtlas {
         });
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("msdfr atlas store"),
-            source: wgpu::ShaderSource::Wgsl(store_shader_source(config.format).into()),
+            source: wgpu::ShaderSource::Wgsl(store_shader_source(config.format).expect("validated").into()),
         });
         let store_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("msdfr atlas store"),
@@ -308,7 +312,7 @@ impl GlyphAtlas {
         });
         let layers = (0..config.layers).map(|_| Layer::new()).collect();
         let workers = crate::workers::Workers::new(&config);
-        GlyphAtlas {
+        Ok(GlyphAtlas {
             generator: FieldGenerator::new(device),
             config,
             texture,
@@ -327,7 +331,7 @@ impl GlyphAtlas {
             pending_texels: 0,
             frame: 1,
             stats: AtlasStats::default(),
-        }
+        })
     }
 
     pub fn config(&self) -> &AtlasConfig {
@@ -710,22 +714,87 @@ impl GlyphAtlas {
     }
 }
 
-/// WGSL of the pass that copies generated fields into an atlas texture of `format`.
-pub(crate) fn store_shader_source(format: wgpu::TextureFormat) -> String {
+/// WGSL of the pass that copies generated fields into an atlas texture of `format` (`None`
+/// for formats the atlas doesn't support).
+pub(crate) fn store_shader_source(format: wgpu::TextureFormat) -> Option<String> {
     let (format_name, lo, hi) = match format {
         wgpu::TextureFormat::Rgba8Unorm => ("rgba8unorm", "0.0", "1.0"),
         wgpu::TextureFormat::Rgba16Float => ("rgba16float", "-4.0", "5.0"),
         wgpu::TextureFormat::Rgba32Float => ("rgba32float", "-1e6", "1e6"),
-        f => panic!("unsupported atlas format {f:?}"),
+        _ => return None,
     };
-    [
-        include_str!("shaders/common.wgsl").to_string(),
-        include_str!("shaders/store.wgsl")
-            .replace("ATLAS_FORMAT", format_name)
-            .replace("STORE_LO", lo)
-            .replace("STORE_HI", hi),
-    ]
-    .join("\n")
+    Some(
+        [
+            include_str!("shaders/common.wgsl").to_string(),
+            include_str!("shaders/store.wgsl")
+                .replace("ATLAS_FORMAT", format_name)
+                .replace("STORE_LO", lo)
+                .replace("STORE_HI", hi),
+        ]
+        .join("\n"),
+    )
+}
+
+/// Why an [`AtlasConfig`] can't be used on a device.
+#[derive(Clone, Debug, PartialEq)]
+pub enum AtlasConfigError {
+    /// The texture format can't be used (or filtered, for `Rgba32Float`).
+    Format(wgpu::TextureFormat),
+    /// The texture exceeds the device's limits (`size` per side, `layers`).
+    TooLarge { size: u32, layers: u32 },
+    /// A value out of its range, described.
+    Invalid(&'static str),
+}
+
+impl std::fmt::Display for AtlasConfigError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AtlasConfigError::Format(format) => write!(f, "unsupported atlas format {format:?}"),
+            AtlasConfigError::TooLarge { size, layers } => {
+                write!(
+                    f,
+                    "a {size}x{size} atlas of {layers} layers exceeds the device's limits"
+                )
+            }
+            AtlasConfigError::Invalid(what) => write!(f, "invalid atlas configuration: {what}"),
+        }
+    }
+}
+
+impl std::error::Error for AtlasConfigError {}
+
+impl AtlasConfig {
+    /// Checks that the configuration works on `device`.
+    pub fn validate(&self, device: &wgpu::Device) -> Result<(), AtlasConfigError> {
+        let filterable_f32 = device.features().contains(wgpu::Features::FLOAT32_FILTERABLE);
+        match self.format {
+            wgpu::TextureFormat::Rgba8Unorm | wgpu::TextureFormat::Rgba16Float => {}
+            wgpu::TextureFormat::Rgba32Float if filterable_f32 => {}
+            f => return Err(AtlasConfigError::Format(f)),
+        }
+        let limits = device.limits();
+        if self.size == 0 || self.layers == 0 {
+            return Err(AtlasConfigError::Invalid("size and layers must be at least 1"));
+        }
+        if self.size > limits.max_texture_dimension_2d || self.layers > limits.max_texture_array_layers {
+            return Err(AtlasConfigError::TooLarge {
+                size: self.size,
+                layers: self.layers,
+            });
+        }
+        if self.min_level == 0 || self.min_level > self.max_level {
+            return Err(AtlasConfigError::Invalid(
+                "levels must satisfy 1 <= min_level <= max_level",
+            ));
+        }
+        if !(self.px_range > 0.0 && self.px_range.is_finite()) {
+            return Err(AtlasConfigError::Invalid("px_range must be positive"));
+        }
+        if !(self.magnification > 0.0 && self.magnification.is_finite()) {
+            return Err(AtlasConfigError::Invalid("magnification must be positive"));
+        }
+        Ok(())
+    }
 }
 
 /// Lowest level (power of two in `[min_level, max_level]`) at which an MSDF of `shape`,

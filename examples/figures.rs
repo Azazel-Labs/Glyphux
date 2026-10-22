@@ -1041,7 +1041,7 @@ fn atlas(inter: &[u8]) -> Result<Vec<u8>, String> {
         detail_probe: false,
         ..AtlasConfig::default()
     };
-    let mut atlas = GlyphAtlas::new(&device, config);
+    let mut atlas = GlyphAtlas::new(&device, config).expect("atlas configuration");
     let jp = std::fs::read(format!("{ASSETS}/NotoSansJP-Subset.ttf")).unwrap();
     let fonts = [
         Font::from_bytes(inter, 0, FontScaling::EmNormalized).unwrap(),

@@ -66,7 +66,7 @@ fn main() {
         view_formats: &[],
     });
     let view = target.create_view(&wgpu::TextureViewDescriptor::default());
-    let mut atlas = GlyphAtlas::new(&device, config);
+    let mut atlas = GlyphAtlas::new(&device, config).expect("atlas configuration");
     let mut renderer = TextRenderer::new(&device, format);
     let mut quads = Vec::new();
     atlas.begin_frame();

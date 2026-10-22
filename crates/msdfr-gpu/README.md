@@ -66,7 +66,7 @@ use msdfr_gpu::units::{em, px};
 
 let font = ShapingFont::new(0, Arc::new(std::fs::read("Font.otf")?), 0).unwrap();
 let mut shaper = Shaper::new();
-let mut atlas = GlyphAtlas::new(&device, AtlasConfig::default()); // 4 × 1024² MTSDF, rgba8
+let mut atlas = GlyphAtlas::new(&device, AtlasConfig::default())?; // 4 × 1024² MTSDF, rgba8
 let mut text = TextRenderer::new(&device, surface_format);
 let units = Units::new(device_pixel_ratio);   // layout in logical (CSS) pixels
 let style = TextStyle::new(px(48.0), [1.0; 4]).glow([1.0, 0.5, 0.2, 0.6], em(0.15));

@@ -14,7 +14,7 @@ fn reach_is_always_covered() {
             return;
         }
     };
-    let mut atlas = GlyphAtlas::new(&device, AtlasConfig::default());
+    let mut atlas = GlyphAtlas::new(&device, AtlasConfig::default()).expect("atlas configuration");
     let square = || Shape::from_description("{ 0,0; 0,0.7; 0.6,0.7; 0.6,0; # }").ok();
     let key = GlyphKey { font: 0, glyph: 1 };
     for px in (20..=300).step_by(7) {
@@ -54,7 +54,7 @@ fn several_flushes_per_submit() {
         ..AtlasConfig::default()
     };
     let render = |one_submit: bool| {
-        let mut atlas = GlyphAtlas::new(&device, config.clone());
+        let mut atlas = GlyphAtlas::new(&device, config.clone()).expect("atlas configuration");
         atlas.begin_frame();
         let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
         for (i, s) in shapes.iter().enumerate() {
@@ -124,7 +124,7 @@ fn levels_of_extreme_sizes() {
             return;
         }
     };
-    let mut atlas = GlyphAtlas::new(&device, AtlasConfig::default());
+    let mut atlas = GlyphAtlas::new(&device, AtlasConfig::default()).expect("atlas configuration");
     let (lo, hi) = (atlas.config().min_level, atlas.config().max_level);
     assert_eq!(atlas.level_for(f64::INFINITY), hi);
     assert_eq!(atlas.level_for(1e30), hi);
@@ -135,5 +135,38 @@ fn levels_of_extreme_sizes() {
     atlas.begin_frame();
     for px in [f64::INFINITY, 1e30, f64::NAN] {
         atlas.get(GlyphKey { font: 0, glyph: 9 }, px, square);
+    }
+}
+
+/// Unusable configurations are errors, not panics or validation failures later.
+#[test]
+fn invalid_configs() {
+    let device = match default_device() {
+        Ok((_, d, _)) => d,
+        Err(e) => {
+            eprintln!("skipping: {e}");
+            return;
+        }
+    };
+    let bad = [
+        AtlasConfig {
+            format: wgpu::TextureFormat::Bgra8Unorm,
+            ..AtlasConfig::default()
+        },
+        AtlasConfig {
+            size: 1 << 20,
+            ..AtlasConfig::default()
+        },
+        AtlasConfig {
+            min_level: 256,
+            ..AtlasConfig::default()
+        },
+        AtlasConfig {
+            layers: 0,
+            ..AtlasConfig::default()
+        },
+    ];
+    for config in bad {
+        assert!(GlyphAtlas::new(&device, config).is_err());
     }
 }
