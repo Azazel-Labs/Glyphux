@@ -384,9 +384,19 @@ impl GlyphAtlas {
 
     /// Level (field texels per em) for a glyph displayed at `px_per_em` screen pixels per em.
     pub fn level_for(&self, px_per_em: f64) -> u32 {
-        let want = (px_per_em / self.config.magnification).ceil().max(1.0) as u32;
-        want.next_power_of_two()
-            .clamp(self.config.min_level, self.config.max_level)
+        self.pow2_level(px_per_em / self.config.magnification)
+    }
+
+    /// The power of two at or above `texels` (per em) within the configured levels. Huge,
+    /// infinite and NaN sizes give the top or bottom level (no overflow).
+    fn pow2_level(&self, texels: f64) -> u32 {
+        let (lo, hi) = (self.config.min_level, self.config.max_level);
+        if texels.is_nan() {
+            return lo;
+        }
+        // Clamped in floating point first: `hi` is a level, so its power of two is in range.
+        let t = texels.ceil().clamp(1.0, f64::from(hi)) as u32;
+        t.checked_next_power_of_two().unwrap_or(hi).clamp(lo, hi)
     }
 
     /// Returns the placement of a glyph displayed at `px_per_em`, queueing its generation on
@@ -411,9 +421,7 @@ impl GlyphAtlas {
     ) -> Option<AtlasGlyph> {
         let size_level = self.level_for(px_per_em);
         // Never more texels per em than the glyph is displayed at.
-        let cap = (px_per_em.ceil().max(1.0) as u32)
-            .next_power_of_two()
-            .clamp(self.config.min_level, self.config.max_level);
+        let cap = self.pow2_level(px_per_em);
         // Until its probe reports, a glyph uses its size level.
         let detail = self.detail.get(&key).copied();
         let probe_wanted = self.config.detail_probe && cap > size_level && detail.is_none();

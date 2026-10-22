@@ -113,3 +113,27 @@ fn read_layer(device: &wgpu::Device, queue: &wgpu::Queue, atlas: &GlyphAtlas) ->
     device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
     buf.slice(..).get_mapped_range().unwrap().to_vec()
 }
+
+/// Absurd display sizes pick the top or bottom level instead of overflowing.
+#[test]
+fn levels_of_extreme_sizes() {
+    let device = match default_device() {
+        Ok((_, d, _)) => d,
+        Err(e) => {
+            eprintln!("skipping: {e}");
+            return;
+        }
+    };
+    let mut atlas = GlyphAtlas::new(&device, AtlasConfig::default());
+    let (lo, hi) = (atlas.config().min_level, atlas.config().max_level);
+    assert_eq!(atlas.level_for(f64::INFINITY), hi);
+    assert_eq!(atlas.level_for(1e30), hi);
+    assert_eq!(atlas.level_for(f64::NAN), lo);
+    assert_eq!(atlas.level_for(-5.0), lo);
+    assert_eq!(atlas.level_for(100.0), 64);
+    let square = || Shape::from_description("{ 0,0; 0,1; 1,1; 1,0; # }").ok();
+    atlas.begin_frame();
+    for px in [f64::INFINITY, 1e30, f64::NAN] {
+        atlas.get(GlyphKey { font: 0, glyph: 9 }, px, square);
+    }
+}
