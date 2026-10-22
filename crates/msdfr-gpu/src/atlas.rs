@@ -8,6 +8,7 @@
 //! the least recently used layer that was not used in the current frame is recycled.
 
 use std::collections::{HashMap, HashSet};
+use std::hash::{BuildHasherDefault, Hasher};
 
 use msdfr::gpu::FieldKind;
 use msdfr::{DEFAULT_ANGLE_THRESHOLD, ErrorCorrectionConfig, Projection, Range, Shape, Transform, Vec2};
@@ -218,16 +219,16 @@ pub struct GlyphAtlas {
     generator: FieldGenerator,
     store: wgpu::ComputePipeline,
     store_layout: wgpu::BindGroupLayout,
-    entries: HashMap<CacheKey, Entry>,
+    entries: FxHashMap<CacheKey, Entry>,
     /// Cached (level, tier) variants per glyph.
-    levels: HashMap<GlyphKey, Vec<(u32, u32)>>,
+    levels: FxHashMap<GlyphKey, Vec<(u32, u32)>>,
     /// Probed minimum level per glyph (see [`AtlasConfig::detail_probe`]).
-    detail: HashMap<GlyphKey, u32>,
+    detail: FxHashMap<GlyphKey, u32>,
     workers: crate::workers::Workers,
     /// Preparations finished before `flush` asked for them, by job id.
-    ready: HashMap<u64, Option<Box<crate::field::PreparedJob>>>,
+    ready: FxHashMap<u64, Option<Box<crate::field::PreparedJob>>>,
     next_job: u64,
-    probes_in_flight: HashSet<GlyphKey>,
+    probes_in_flight: HashSet<GlyphKey, FxBuild>,
     layers: Vec<Layer>,
     pending: Vec<Pending>,
     pending_texels: u32,
@@ -314,13 +315,13 @@ impl GlyphAtlas {
             view,
             store,
             store_layout,
-            entries: HashMap::new(),
-            levels: HashMap::new(),
-            detail: HashMap::new(),
+            entries: FxHashMap::default(),
+            levels: FxHashMap::default(),
+            detail: FxHashMap::default(),
             workers,
-            ready: HashMap::new(),
+            ready: FxHashMap::default(),
             next_job: 0,
-            probes_in_flight: HashSet::new(),
+            probes_in_flight: HashSet::default(),
             layers,
             pending: Vec::new(),
             pending_texels: 0,
@@ -414,9 +415,10 @@ impl GlyphAtlas {
             .next_power_of_two()
             .clamp(self.config.min_level, self.config.max_level);
         // Until its probe reports, a glyph uses its size level.
-        let probe_wanted = self.config.detail_probe && cap > size_level && !self.detail.contains_key(&key);
-        let mut level = match self.detail.get(&key) {
-            Some(&d) => size_level.max(d.min(cap)),
+        let detail = self.detail.get(&key).copied();
+        let probe_wanted = self.config.detail_probe && cap > size_level && detail.is_none();
+        let mut level = match detail {
+            Some(d) => size_level.max(d.min(cap)),
             None => size_level,
         };
         // Range (texels) for effects reaching `reach_px`: half the range lies outside the
@@ -765,3 +767,43 @@ fn has_ink(shape: &Shape) -> bool {
         })
     })
 }
+
+/// FxHash, rustc's hasher. The atlas hashes a few small integers on every glyph lookup, every
+/// frame; SipHash's resistance to crafted keys buys nothing there and costs most of the lookup.
+#[derive(Clone, Copy, Default)]
+struct FxHasher(u64);
+
+impl FxHasher {
+    fn add(&mut self, word: u64) {
+        self.0 = (self.0.rotate_left(5) ^ word).wrapping_mul(0x517c_c1b7_2722_0a95);
+    }
+}
+
+impl Hasher for FxHasher {
+    fn write(&mut self, bytes: &[u8]) {
+        for chunk in bytes.chunks(8) {
+            let mut word = [0; 8];
+            word[..chunk.len()].copy_from_slice(chunk);
+            self.add(u64::from_le_bytes(word));
+        }
+    }
+
+    fn write_u32(&mut self, n: u32) {
+        self.add(u64::from(n));
+    }
+
+    fn write_u64(&mut self, n: u64) {
+        self.add(n);
+    }
+
+    fn write_usize(&mut self, n: usize) {
+        self.add(n as u64);
+    }
+
+    fn finish(&self) -> u64 {
+        self.0
+    }
+}
+
+type FxBuild = BuildHasherDefault<FxHasher>;
+type FxHashMap<K, V> = HashMap<K, V, FxBuild>;
