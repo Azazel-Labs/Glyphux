@@ -1,0 +1,117 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 938 462" width="938" height="462" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+<rect width="938" height="462" rx="10" fill="#ffffff"/>
+<text x="20.0" y="30.0" font-size="15" fill="#24292f" text-anchor="start" font-weight="600">The passes of a flush, and what each one touches</text>
+<text x="20.0" y="48.0" font-size="12" fill="#6e7781" text-anchor="start" font-weight="400">Error correction (ec_*) runs when it is enabled; the text pass draws from the atlas every frame</text>
+<text x="297.0" y="110.0" font-size="11.5" fill="#24292f" text-anchor="start" transform="rotate(-35 297.0 110.0)">glyphs</text>
+<text x="351.0" y="110.0" font-size="11.5" fill="#24292f" text-anchor="start" transform="rotate(-35 351.0 110.0)">work</text>
+<text x="405.0" y="110.0" font-size="11.5" fill="#24292f" text-anchor="start" transform="rotate(-35 405.0 110.0)">edges</text>
+<text x="459.0" y="110.0" font-size="11.5" fill="#24292f" text-anchor="start" transform="rotate(-35 459.0 110.0)">contours</text>
+<text x="513.0" y="110.0" font-size="11.5" fill="#24292f" text-anchor="start" transform="rotate(-35 513.0 110.0)">curves</text>
+<text x="567.0" y="110.0" font-size="11.5" fill="#24292f" text-anchor="start" transform="rotate(-35 567.0 110.0)">tile_groups</text>
+<text x="621.0" y="110.0" font-size="11.5" fill="#24292f" text-anchor="start" transform="rotate(-35 621.0 110.0)">cands</text>
+<text x="675.0" y="110.0" font-size="11.5" fill="#24292f" text-anchor="start" transform="rotate(-35 675.0 110.0)">field</text>
+<text x="729.0" y="110.0" font-size="11.5" fill="#24292f" text-anchor="start" transform="rotate(-35 729.0 110.0)">stencil</text>
+<text x="783.0" y="110.0" font-size="11.5" fill="#24292f" text-anchor="start" transform="rotate(-35 783.0 110.0)">corners</text>
+<text x="837.0" y="110.0" font-size="11.5" fill="#24292f" text-anchor="start" transform="rotate(-35 837.0 110.0)">atlas</text>
+<text x="891.0" y="110.0" font-size="11.5" fill="#24292f" text-anchor="start" transform="rotate(-35 891.0 110.0)">instances</text>
+<rect x="20" y="120.0" width="898.0" height="34" fill="#f6f8fa"/>
+<text x="28.0" y="135.0" font-size="13" fill="#24292f" text-anchor="start" font-weight="600">upload</text>
+<text x="28.0" y="149.0" font-size="11" fill="#6e7781" text-anchor="start" font-weight="400">copies from one staging buffer</text>
+<rect x="274.0" y="126.0" width="46.0" height="22.0" rx="4" fill="#8c959f"/>
+<text x="297.0" y="141.5" font-size="10.5" fill="#ffffff" text-anchor="middle" font-weight="600">copy</text>
+<rect x="328.0" y="126.0" width="46.0" height="22.0" rx="4" fill="#8c959f"/>
+<text x="351.0" y="141.5" font-size="10.5" fill="#ffffff" text-anchor="middle" font-weight="600">copy</text>
+<rect x="382.0" y="126.0" width="46.0" height="22.0" rx="4" fill="#8c959f"/>
+<text x="405.0" y="141.5" font-size="10.5" fill="#ffffff" text-anchor="middle" font-weight="600">copy</text>
+<rect x="436.0" y="126.0" width="46.0" height="22.0" rx="4" fill="#8c959f"/>
+<text x="459.0" y="141.5" font-size="10.5" fill="#ffffff" text-anchor="middle" font-weight="600">copy</text>
+<rect x="490.0" y="126.0" width="46.0" height="22.0" rx="4" fill="#8c959f"/>
+<text x="513.0" y="141.5" font-size="10.5" fill="#ffffff" text-anchor="middle" font-weight="600">copy</text>
+<rect x="544.0" y="126.0" width="46.0" height="22.0" rx="4" fill="#8c959f"/>
+<text x="567.0" y="141.5" font-size="10.5" fill="#ffffff" text-anchor="middle" font-weight="600">copy</text>
+<rect x="598.0" y="126.0" width="46.0" height="22.0" rx="4" fill="#8c959f"/>
+<text x="621.0" y="141.5" font-size="10.5" fill="#ffffff" text-anchor="middle" font-weight="600">copy</text>
+<rect x="760.0" y="126.0" width="46.0" height="22.0" rx="4" fill="#8c959f"/>
+<text x="783.0" y="141.5" font-size="10.5" fill="#ffffff" text-anchor="middle" font-weight="600">copy</text>
+<text x="28.0" y="169.0" font-size="13" fill="#24292f" text-anchor="start" font-weight="600">fine</text>
+<text x="28.0" y="183.0" font-size="11" fill="#6e7781" text-anchor="start" font-weight="400">one workgroup per (glyph, tile)</text>
+<rect x="274.0" y="160.0" width="46.0" height="22.0" rx="4" fill="#dbe8f6"/>
+<text x="297.0" y="175.5" font-size="10.5" fill="#2f5f99" text-anchor="middle" font-weight="600">read</text>
+<rect x="328.0" y="160.0" width="46.0" height="22.0" rx="4" fill="#dbe8f6"/>
+<text x="351.0" y="175.5" font-size="10.5" fill="#2f5f99" text-anchor="middle" font-weight="600">read</text>
+<rect x="382.0" y="160.0" width="46.0" height="22.0" rx="4" fill="#dbe8f6"/>
+<text x="405.0" y="175.5" font-size="10.5" fill="#2f5f99" text-anchor="middle" font-weight="600">read</text>
+<rect x="436.0" y="160.0" width="46.0" height="22.0" rx="4" fill="#dbe8f6"/>
+<text x="459.0" y="175.5" font-size="10.5" fill="#2f5f99" text-anchor="middle" font-weight="600">read</text>
+<rect x="490.0" y="160.0" width="46.0" height="22.0" rx="4" fill="#dbe8f6"/>
+<text x="513.0" y="175.5" font-size="10.5" fill="#2f5f99" text-anchor="middle" font-weight="600">read</text>
+<rect x="544.0" y="160.0" width="46.0" height="22.0" rx="4" fill="#dbe8f6"/>
+<text x="567.0" y="175.5" font-size="10.5" fill="#2f5f99" text-anchor="middle" font-weight="600">read</text>
+<rect x="598.0" y="160.0" width="46.0" height="22.0" rx="4" fill="#dbe8f6"/>
+<text x="621.0" y="175.5" font-size="10.5" fill="#2f5f99" text-anchor="middle" font-weight="600">read</text>
+<rect x="652.0" y="160.0" width="46.0" height="22.0" rx="4" fill="#e07b1f"/>
+<text x="675.0" y="175.5" font-size="10.5" fill="#ffffff" text-anchor="middle" font-weight="600">write</text>
+<rect x="20" y="188.0" width="898.0" height="34" fill="#f6f8fa"/>
+<text x="28.0" y="203.0" font-size="13" fill="#24292f" text-anchor="start" font-weight="600">ec_corners</text>
+<text x="28.0" y="217.0" font-size="11" fill="#6e7781" text-anchor="start" font-weight="400">one invocation per corner texel</text>
+<rect x="706.0" y="194.0" width="46.0" height="22.0" rx="4" fill="#f4b26b"/>
+<text x="729.0" y="209.5" font-size="10.5" fill="#5a3200" text-anchor="middle" font-weight="600">r/w</text>
+<rect x="760.0" y="194.0" width="46.0" height="22.0" rx="4" fill="#dbe8f6"/>
+<text x="783.0" y="209.5" font-size="10.5" fill="#2f5f99" text-anchor="middle" font-weight="600">read</text>
+<text x="28.0" y="237.0" font-size="13" fill="#24292f" text-anchor="start" font-weight="600">ec_protect</text>
+<text x="28.0" y="251.0" font-size="11" fill="#6e7781" text-anchor="start" font-weight="400">per texel: protect edges</text>
+<rect x="274.0" y="228.0" width="46.0" height="22.0" rx="4" fill="#dbe8f6"/>
+<text x="297.0" y="243.5" font-size="10.5" fill="#2f5f99" text-anchor="middle" font-weight="600">read</text>
+<rect x="328.0" y="228.0" width="46.0" height="22.0" rx="4" fill="#dbe8f6"/>
+<text x="351.0" y="243.5" font-size="10.5" fill="#2f5f99" text-anchor="middle" font-weight="600">read</text>
+<rect x="652.0" y="228.0" width="46.0" height="22.0" rx="4" fill="#dbe8f6"/>
+<text x="675.0" y="243.5" font-size="10.5" fill="#2f5f99" text-anchor="middle" font-weight="600">read</text>
+<rect x="706.0" y="228.0" width="46.0" height="22.0" rx="4" fill="#f4b26b"/>
+<text x="729.0" y="243.5" font-size="10.5" fill="#5a3200" text-anchor="middle" font-weight="600">r/w</text>
+<rect x="20" y="256.0" width="898.0" height="34" fill="#f6f8fa"/>
+<text x="28.0" y="271.0" font-size="13" fill="#24292f" text-anchor="start" font-weight="600">ec_find</text>
+<text x="28.0" y="285.0" font-size="11" fill="#6e7781" text-anchor="start" font-weight="400">per texel: flag artifacts</text>
+<rect x="274.0" y="262.0" width="46.0" height="22.0" rx="4" fill="#dbe8f6"/>
+<text x="297.0" y="277.5" font-size="10.5" fill="#2f5f99" text-anchor="middle" font-weight="600">read</text>
+<rect x="328.0" y="262.0" width="46.0" height="22.0" rx="4" fill="#dbe8f6"/>
+<text x="351.0" y="277.5" font-size="10.5" fill="#2f5f99" text-anchor="middle" font-weight="600">read</text>
+<rect x="382.0" y="262.0" width="46.0" height="22.0" rx="4" fill="#dbe8f6"/>
+<text x="405.0" y="277.5" font-size="10.5" fill="#2f5f99" text-anchor="middle" font-weight="600">read</text>
+<rect x="436.0" y="262.0" width="46.0" height="22.0" rx="4" fill="#dbe8f6"/>
+<text x="459.0" y="277.5" font-size="10.5" fill="#2f5f99" text-anchor="middle" font-weight="600">read</text>
+<rect x="490.0" y="262.0" width="46.0" height="22.0" rx="4" fill="#dbe8f6"/>
+<text x="513.0" y="277.5" font-size="10.5" fill="#2f5f99" text-anchor="middle" font-weight="600">read</text>
+<rect x="652.0" y="262.0" width="46.0" height="22.0" rx="4" fill="#dbe8f6"/>
+<text x="675.0" y="277.5" font-size="10.5" fill="#2f5f99" text-anchor="middle" font-weight="600">read</text>
+<rect x="706.0" y="262.0" width="46.0" height="22.0" rx="4" fill="#f4b26b"/>
+<text x="729.0" y="277.5" font-size="10.5" fill="#5a3200" text-anchor="middle" font-weight="600">r/w</text>
+<text x="28.0" y="305.0" font-size="13" fill="#24292f" text-anchor="start" font-weight="600">ec_apply</text>
+<text x="28.0" y="319.0" font-size="11" fill="#6e7781" text-anchor="start" font-weight="400">per texel: flagged → median</text>
+<rect x="274.0" y="296.0" width="46.0" height="22.0" rx="4" fill="#dbe8f6"/>
+<text x="297.0" y="311.5" font-size="10.5" fill="#2f5f99" text-anchor="middle" font-weight="600">read</text>
+<rect x="328.0" y="296.0" width="46.0" height="22.0" rx="4" fill="#dbe8f6"/>
+<text x="351.0" y="311.5" font-size="10.5" fill="#2f5f99" text-anchor="middle" font-weight="600">read</text>
+<rect x="652.0" y="296.0" width="46.0" height="22.0" rx="4" fill="#f4b26b"/>
+<text x="675.0" y="311.5" font-size="10.5" fill="#5a3200" text-anchor="middle" font-weight="600">r/w</text>
+<rect x="706.0" y="296.0" width="46.0" height="22.0" rx="4" fill="#dbe8f6"/>
+<text x="729.0" y="311.5" font-size="10.5" fill="#2f5f99" text-anchor="middle" font-weight="600">read</text>
+<rect x="20" y="324.0" width="898.0" height="34" fill="#f6f8fa"/>
+<text x="28.0" y="339.0" font-size="13" fill="#24292f" text-anchor="start" font-weight="600">store</text>
+<text x="28.0" y="353.0" font-size="11" fill="#6e7781" text-anchor="start" font-weight="400">per texel: into the atlas</text>
+<rect x="274.0" y="330.0" width="46.0" height="22.0" rx="4" fill="#dbe8f6"/>
+<text x="297.0" y="345.5" font-size="10.5" fill="#2f5f99" text-anchor="middle" font-weight="600">read</text>
+<rect x="328.0" y="330.0" width="46.0" height="22.0" rx="4" fill="#dbe8f6"/>
+<text x="351.0" y="345.5" font-size="10.5" fill="#2f5f99" text-anchor="middle" font-weight="600">read</text>
+<rect x="652.0" y="330.0" width="46.0" height="22.0" rx="4" fill="#dbe8f6"/>
+<text x="675.0" y="345.5" font-size="10.5" fill="#2f5f99" text-anchor="middle" font-weight="600">read</text>
+<rect x="814.0" y="330.0" width="46.0" height="22.0" rx="4" fill="#e07b1f"/>
+<text x="837.0" y="345.5" font-size="10.5" fill="#ffffff" text-anchor="middle" font-weight="600">write</text>
+<text x="28.0" y="373.0" font-size="13" fill="#24292f" text-anchor="start" font-weight="600">text (render)</text>
+<text x="28.0" y="387.0" font-size="11" fill="#6e7781" text-anchor="start" font-weight="400">instanced quads, every frame</text>
+<rect x="814.0" y="364.0" width="46.0" height="22.0" rx="4" fill="#dbe8f6"/>
+<text x="837.0" y="379.5" font-size="10.5" fill="#2f5f99" text-anchor="middle" font-weight="600">read</text>
+<rect x="868.0" y="364.0" width="46.0" height="22.0" rx="4" fill="#dbe8f6"/>
+<text x="891.0" y="379.5" font-size="10.5" fill="#2f5f99" text-anchor="middle" font-weight="600">read</text>
+<text x="20.0" y="418.0" font-size="12" fill="#6e7781" text-anchor="start" font-weight="400">Two bind groups per batch, distance (0–7) and error correction (0–4, 7–9): at most 8 storage buffers each, as WebGPU allows.</text>
+<text x="20.0" y="436.0" font-size="12" fill="#6e7781" text-anchor="start" font-weight="400">The store pass binds the atlas as a storage texture; the text pass samples it, with the glyph instances as a vertex buffer.</text>
+</svg>

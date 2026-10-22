@@ -28,6 +28,10 @@ fn main() {
     let font = Font::from_bytes(&inter, 0, FontScaling::EmNormalized).unwrap();
 
     let r = GlyphField::new(&font, 'R', 32.0, 4.0);
+    let batch: Vec<BatchGlyph> = ['G', 'p', 'u']
+        .into_iter()
+        .map(|c| BatchGlyph::new(&GlyphField::new(&font, c, 32.0, 4.0), c))
+        .collect();
     let figures = [
         ("pipeline.svg", pipeline()),
         ("coloring.svg", coloring(&r)),
@@ -36,6 +40,9 @@ fn main() {
         ("median.svg", median_figure(&r)),
         ("correction.svg", correction(&GlyphField::new(&font, 'X', 24.0, 4.0))),
         ("shaping.svg", shaping(inter.clone())),
+        ("batch.svg", batch_buffers(&batch)),
+        ("lookup.svg", batch_lookup(&batch)),
+        ("passes.svg", batch_passes()),
     ];
     for (name, svg) in figures {
         std::fs::write(format!("{out}/{name}"), svg).unwrap();
@@ -1087,4 +1094,599 @@ fn atlas(inter: &[u8]) -> Result<Vec<u8>, String> {
         .flat_map(|i| [px[i], px[i + 1], px[i + 2]])
         .collect();
     Ok(encode_png(w, h, 3, &rgb))
+}
+
+// ---------------------------------------------------------------------------------------------
+// GPU batch figures: the buffers of one generation batch, built from real glyphs the way
+// msdfr-gpu's prepare_job and FieldGenerator::upload lay them out.
+
+/// Bytes of the WGSL `Glyph` record (common.wgsl: 36 four-byte fields).
+const GLYPH_RECORD: usize = 144;
+
+/// One glyph's share of each batch buffer, in elements.
+struct BatchGlyph {
+    name: char,
+    w: u32,
+    h: u32,
+    tiles_x: u32,
+    tiles_y: u32,
+    groups: u32,
+    edges: usize,
+    contours: usize,
+    curves: usize,
+    tile_groups: usize,
+    cands: usize,
+    corners: usize,
+    bins: msdfr::gpu::TileBins,
+}
+
+impl BatchGlyph {
+    fn new(g: &GlyphField, name: char) -> Self {
+        let gpu = msdfr::gpu::GpuShape::new(&g.prepared);
+        let bins = bin_tiles(&g.prepared, &g.transform, g.w, g.h, 8, FieldKind::MTSDF, true);
+        let corners = msdfr::gpu::corner_texels(&g.prepared, &g.transform, g.w, g.h);
+        // Sign correction: a start index per row (and one past the last), then (x, dir) pairs.
+        let mut crossings = 0;
+        let mut row = Vec::new();
+        for r in 0..g.h {
+            let y = g
+                .transform
+                .projection
+                .unproject(Vec2::new(0.0, f64::from(g.h - 1 - r) + 0.5))
+                .y;
+            g.prepared.scanline(y, &mut row);
+            crossings += row.len();
+        }
+        BatchGlyph {
+            name,
+            w: g.w,
+            h: g.h,
+            tiles_x: bins.tiles_x,
+            tiles_y: bins.tiles_y,
+            groups: bins.groups,
+            edges: gpu.edges.len(),
+            contours: gpu.contours.len(),
+            curves: gpu.curves.len() + g.h as usize + 1 + 2 * crossings,
+            tile_groups: bins.ranges.len(),
+            cands: bins.indices.len(),
+            corners: corners.len(),
+            bins,
+        }
+    }
+
+    fn texels(&self) -> usize {
+        (self.w * self.h) as usize
+    }
+
+    fn tiles(&self) -> usize {
+        (self.tiles_x * self.tiles_y) as usize
+    }
+}
+
+const GLYPH_HUES: [&str; 3] = ["#3b82c4", "#e07b1f", "#2a9d8f"];
+const GLYPH_TINTS: [&str; 3] = ["#dbe8f6", "#fbe5cf", "#d6efec"];
+
+fn kb(bytes: usize) -> String {
+    if bytes < 1024 {
+        format!("{bytes} B")
+    } else {
+        format!("{:.1} KB", bytes as f64 / 1024.0)
+    }
+}
+
+/// The ten storage buffers of one batch, each the concatenation of every glyph's part, with
+/// one glyph's record offsets pointing into them.
+fn batch_buffers(glyphs: &[BatchGlyph]) -> String {
+    let edge = size_of::<msdfr::gpu::GpuEdge>();
+    let contour = size_of::<msdfr::gpu::GpuContour>();
+    let group = size_of::<msdfr::gpu::GpuTileGroup>();
+    let sel = 1; // the glyph whose offsets are shown
+    let prefix = |f: &dyn Fn(&BatchGlyph) -> usize| glyphs[..sel].iter().map(f).sum::<usize>();
+    // (binding, name, element, bytes per element, count per glyph, offset label for `sel`,
+    // written by the GPU)
+    type Row<'a> = (u32, &'a str, &'a str, usize, Vec<usize>, String, bool);
+    let count = |f: &dyn Fn(&BatchGlyph) -> usize| glyphs.iter().map(f).collect::<Vec<_>>();
+    let rows: Vec<Row<'_>> = vec![
+        (
+            0,
+            "glyphs",
+            "Glyph record",
+            GLYPH_RECORD,
+            count(&|_| 1),
+            format!("glyphs[{sel}]"),
+            false,
+        ),
+        (
+            1,
+            "work",
+            "(glyph, tile)",
+            8,
+            count(&|g| g.tiles()),
+            format!("({sel}, 0 … {})", glyphs[sel].tiles() - 1),
+            false,
+        ),
+        (
+            2,
+            "edges",
+            "Edge",
+            edge,
+            count(&|g| g.edges),
+            format!("edge_offset = {}", prefix(&|g| g.edges)),
+            false,
+        ),
+        (
+            3,
+            "contours",
+            "Contour",
+            contour,
+            count(&|g| g.contours),
+            format!("contour_offset = {}", prefix(&|g| g.contours)),
+            false,
+        ),
+        (
+            4,
+            "curves",
+            "f32",
+            4,
+            count(&|g| g.curves),
+            format!("curve_offset = {}", prefix(&|g| g.curves)),
+            false,
+        ),
+        (
+            5,
+            "tile_groups",
+            "TileGroup",
+            group,
+            count(&|g| g.tile_groups),
+            format!("tile_offset = {}", prefix(&|g| g.tile_groups)),
+            false,
+        ),
+        (
+            6,
+            "cands",
+            "(edge, bound)",
+            8,
+            count(&|g| g.cands),
+            format!("cand_offset = {}", prefix(&|g| g.cands)),
+            false,
+        ),
+        (
+            7,
+            "field",
+            "vec4<f32> texel",
+            16,
+            count(&|g| g.texels()),
+            format!("field_offset = {}", prefix(&|g| g.texels())),
+            true,
+        ),
+        (
+            8,
+            "stencil",
+            "u32 flags",
+            4,
+            count(&|g| g.texels()),
+            format!("field_offset = {}", prefix(&|g| g.texels())),
+            true,
+        ),
+        (
+            9,
+            "corners",
+            "u32 texel",
+            4,
+            count(&|g| g.corners),
+            "batch texel indices".into(),
+            false,
+        ),
+    ];
+    let max_bytes = rows.iter().map(|r| r.3 * r.4.iter().sum::<usize>()).max().unwrap() as f64;
+    let (x0, bar_x, bar_max, row_h) = (20.0, 250.0, 560.0, 44.0);
+    let top = 96.0;
+    let mut svg = Svg::new(940.0, top + rows.len() as f64 * row_h + 150.0);
+    svg.heading(
+        20.0,
+        30.0,
+        "One batch: every glyph generated in a frame, in ten storage buffers",
+        &format!(
+            "Real sizes for Inter 'G', 'p' and 'u' at 32 texels per em; bar length ~ sqrt(bytes), split per glyph; glyph {sel}'s record offsets shown"
+        ),
+    );
+    svg.text(
+        bar_x,
+        top - 14.0,
+        11.5,
+        MUTED,
+        "start",
+        600,
+        "BINDING · BUFFER · ELEMENT",
+    );
+    for (i, (binding, name, element, size, counts, offset, gpu_written)) in rows.iter().enumerate() {
+        let y = top + i as f64 * row_h;
+        let total: usize = counts.iter().sum();
+        let bytes = total * size;
+        svg.text(x0, y + 17.0, 13.0, INK, "start", 600, &format!("{binding}  {name}"));
+        svg.text(
+            x0 + 18.0,
+            y + 33.0,
+            11.5,
+            MUTED,
+            "start",
+            400,
+            &format!("{element} · {size} B"),
+        );
+        let len = (bar_max * (bytes as f64 / max_bytes).sqrt()).max(36.0);
+        let mut x = bar_x;
+        for (k, &c) in counts.iter().enumerate() {
+            let w = len * c as f64 / total.max(1) as f64;
+            let (fill, stroke) = if *gpu_written {
+                (GLYPH_TINTS[k], GLYPH_HUES[k])
+            } else {
+                (GLYPH_HUES[k], "#ffffff")
+            };
+            svg.add(format!(
+                r#"<rect x="{x:.1}" y="{:.1}" width="{w:.1}" height="20" fill="{fill}" stroke="{stroke}" stroke-width="1.2"/>"#,
+                y + 4.0
+            ));
+            if w > 30.0 {
+                let color = if *gpu_written { GLYPH_HUES[k] } else { "#ffffff" };
+                svg.text(x + w / 2.0, y + 18.0, 11.0, color, "middle", 600, &c.to_string());
+            }
+            if k == sel {
+                svg.add(format!(
+                    r#"<path d="M{x:.1},{:.1}v-7" stroke="{}" stroke-width="1.5"/>"#,
+                    y + 4.0,
+                    GLYPH_HUES[k]
+                ));
+                svg.text(x + 3.0, y + 0.5, 10.5, GLYPH_HUES[k], "start", 600, offset);
+            }
+            x += w;
+        }
+        svg.text(bar_x + len + 10.0, y + 18.0, 12.0, INK, "start", 500, &kb(bytes));
+    }
+    let mut y = top + rows.len() as f64 * row_h + 14.0;
+    for (k, g) in glyphs.iter().enumerate() {
+        svg.add(format!(
+            r#"<rect x="{x0:.1}" y="{:.1}" width="14" height="14" fill="{}"/>"#,
+            y - 11.0,
+            GLYPH_HUES[k]
+        ));
+        let contours = if g.contours == 1 { "contour" } else { "contours" };
+        let label = format!(
+            "glyph {k}: '{}', {}×{} texels, {}×{} tiles of 8×8, {} {contours}",
+            g.name, g.w, g.h, g.tiles_x, g.tiles_y, g.contours
+        );
+        svg.text(x0 + 20.0, y, 12.0, INK, "start", 400, &label);
+        y += 18.0;
+    }
+    y += 8.0;
+    svg.text(
+        x0,
+        y + 26.0,
+        12.0,
+        MUTED,
+        "start",
+        400,
+        "Solid: uploaded each flush (one staging buffer, copied in the command encoder, in order with the passes).",
+    );
+    svg.text(
+        x0,
+        y + 44.0,
+        12.0,
+        MUTED,
+        "start",
+        400,
+        "Outlined: written by the GPU passes. Buffers are reused from batch to batch, grown to the next power of two.",
+    );
+    svg.text(
+        x0,
+        y + 62.0,
+        12.0,
+        MUTED,
+        "start",
+        400,
+        "curves holds each cubic's interval data, then its sign-correction scanlines (scan_offset).",
+    );
+    svg.finish()
+}
+
+/// How one invocation finds its data: from its work item to its texel in the atlas.
+fn batch_lookup(glyphs: &[BatchGlyph]) -> String {
+    let sel = 1;
+    let g = &glyphs[sel];
+    let groups = g.groups as usize;
+    // A tile with candidates (near the outline), the one with the fewest.
+    let tile = (0..g.tiles())
+        .filter(|&t| (0..groups).any(|c| g.bins.ranges[t * groups + c].count > 0))
+        .min_by_key(|&t| (0..groups).map(|c| g.bins.ranges[t * groups + c].count).sum::<u32>())
+        .unwrap();
+    let k = glyphs[..sel].iter().map(BatchGlyph::tiles).sum::<usize>() + tile;
+    let (tx, ty) = (tile as u32 % g.tiles_x, tile as u32 / g.tiles_x);
+    let tile_offset: usize = glyphs[..sel].iter().map(|g| g.tile_groups).sum();
+    let cand_offset: usize = glyphs[..sel].iter().map(|g| g.cands).sum();
+    let edge_offset: usize = glyphs[..sel].iter().map(|g| g.edges).sum();
+    let field_offset: usize = glyphs[..sel].iter().map(BatchGlyph::texels).sum();
+    let ranges = &g.bins.ranges[tile * groups..(tile + 1) * groups];
+    let (x, row) = (tx * 8 + 3, ty * 8 + 5); // one texel of the tile
+    let mut svg = Svg::new(940.0, 440.0);
+    svg.add(format!(
+        r#"<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" fill="{MUTED}"/></marker></defs>"#
+    ));
+    svg.heading(
+        20.0,
+        30.0,
+        "One texel's path through the buffers",
+        &format!(
+            "Glyph {sel} ('{}') of the batch above: work item {k} is its tile {tile}; the invocation for texel ({x}, {row}) of that tile",
+            g.name
+        ),
+    );
+    let (bw, bh) = (206.0, 118.0);
+    let col = |i: f64| 20.0 + i * (bw + 22.0);
+    let (r1, r2) = (70.0, 70.0 + bh + 60.0);
+    let edges_listed: Vec<String> = ranges
+        .iter()
+        .flat_map(|r| {
+            g.bins.indices[r.offset as usize..(r.offset + r.count) as usize]
+                .iter()
+                .map(ToString::to_string)
+        })
+        .collect();
+    let group_lines: Vec<String> = ranges
+        .iter()
+        .enumerate()
+        .map(|(c, r)| format!("contour {c}: {} candidates", r.count))
+        .collect();
+    let boxes: [(f64, f64, &str, Vec<String>, usize); 8] = [
+        (
+            col(0.0),
+            r1,
+            "work",
+            vec![
+                format!("work[{k}] = ({sel}, {tile})"),
+                "one 8×8 workgroup per item,".into(),
+                "one invocation per texel".into(),
+            ],
+            1,
+        ),
+        (
+            col(1.0),
+            r1,
+            "glyphs",
+            vec![
+                format!("glyphs[{sel}]"),
+                format!("{}×{} texels, {}×{} tiles", g.w, g.h, g.tiles_x, g.tiles_y),
+                format!("tile_offset {tile_offset}, cand_offset {cand_offset}"),
+                format!("edge_offset {edge_offset}, field_offset {field_offset}"),
+            ],
+            0,
+        ),
+        (
+            col(2.0),
+            r1,
+            "tile_groups",
+            {
+                let mut v = vec![
+                    format!("[tile_offset + {tile}·{groups} + c]"),
+                    format!("tile ({tx}, {ty}): offset, count, and"),
+                ];
+                v.push("upper bounds per channel".into());
+                v.extend(group_lines.iter().take(2).cloned());
+                v
+            },
+            5,
+        ),
+        (
+            col(3.0),
+            r1,
+            "cands",
+            vec![
+                "[cand_offset + offset …]".into(),
+                format!(
+                    "edges {}",
+                    edges_listed.iter().take(6).cloned().collect::<Vec<_>>().join(", ")
+                ),
+                "sorted by lower bound: the scan".into(),
+                "stops when none can be nearer".into(),
+            ],
+            6,
+        ),
+        (
+            col(3.0),
+            r2,
+            "edges",
+            vec![
+                "edges[edge_offset + i]".to_string(),
+                "lines, quadratics, cubics; cubics".into(),
+                "read their interval data from".into(),
+                "curves, the combiner contours".into(),
+            ],
+            2,
+        ),
+        (
+            col(2.0),
+            r2,
+            "field",
+            vec![
+                format!("field[field_offset + {row}·{} + {x}]", g.w),
+                "vec4: MSDF in rgb,".into(),
+                "true distance in a".into(),
+            ],
+            7,
+        ),
+        (
+            col(1.0),
+            r2,
+            "stencil",
+            vec![
+                format!("stencil[field_offset + {row}·{} + {x}]", g.w),
+                "error correction flags: protected".into(),
+                "(corners from binding 9, edges),".into(),
+                "artifact; artifacts → median".into(),
+            ],
+            8,
+        ),
+        (
+            col(0.0),
+            r2,
+            "atlas texture",
+            vec![
+                "layer atlas_layer, at".to_string(),
+                format!("(atlas_x + {x}, atlas_y + {row})"),
+                "the store pass clamps to the".into(),
+                "format (rgba8 or rgba16f)".into(),
+            ],
+            10,
+        ),
+    ];
+    for (bx, by, title, lines, binding) in &boxes {
+        let hue = if *binding == 10 { "#c98a1c" } else { "#57606a" };
+        svg.add(format!(
+            r##"<rect x="{bx:.1}" y="{by:.1}" width="{bw}" height="{bh}" rx="8" fill="#ffffff" stroke="{hue}" stroke-width="1.2"/>"##
+        ));
+        let tag = match binding {
+            10 => "texture".to_string(),
+            2 => "bindings 2, 3, 4".to_string(),
+            b => format!("binding {b}"),
+        };
+        svg.text(bx + 12.0, by + 20.0, 13.0, INK, "start", 600, title);
+        svg.text(bx + bw - 10.0, by + 20.0, 10.5, MUTED, "end", 400, &tag);
+        for (i, l) in lines.iter().enumerate() {
+            let (size, color, weight) = if i == 0 {
+                (11.5, GLYPH_HUES[sel], 600)
+            } else {
+                (11.5, MUTED, 400)
+            };
+            svg.text(bx + 12.0, by + 42.0 + 17.0 * i as f64, size, color, "start", weight, l);
+        }
+    }
+    for i in 0..3 {
+        let x = col(i as f64) + bw;
+        arrow(
+            &mut svg,
+            &format!("M{x:.1},{:.1}H{:.1}", r1 + bh / 2.0, col(i as f64 + 1.0) - 3.0),
+            MUTED,
+            false,
+        );
+    }
+    arrow(
+        &mut svg,
+        &format!("M{:.1},{:.1}V{:.1}", col(3.0) + bw / 2.0, r1 + bh, r2 - 3.0),
+        MUTED,
+        false,
+    );
+    for i in (1..=3).rev() {
+        arrow(
+            &mut svg,
+            &format!(
+                "M{:.1},{:.1}H{:.1}",
+                col(i as f64),
+                r2 + bh / 2.0,
+                col(i as f64 - 1.0) + bw + 3.0
+            ),
+            MUTED,
+            false,
+        );
+    }
+    svg.text(
+        20.0,
+        r2 + bh + 34.0,
+        12.0,
+        MUTED,
+        "start",
+        400,
+        "Every array is shared by the whole batch: a glyph's record holds its offsets into them, so one dispatch covers all glyphs.",
+    );
+    svg.finish()
+}
+
+/// Which pass reads and writes which buffer, in order.
+fn batch_passes() -> String {
+    let cols = [
+        "glyphs",
+        "work",
+        "edges",
+        "contours",
+        "curves",
+        "tile_groups",
+        "cands",
+        "field",
+        "stencil",
+        "corners",
+        "atlas",
+        "instances",
+    ];
+    // R read, W write, X read and write (atomics or in place), U upload.
+    let rows: [(&str, &str, &str); 8] = [
+        ("upload", "copies from one staging buffer", "UUUUUUU..U.."),
+        ("fine", "one workgroup per (glyph, tile)", "RRRRRRRW...."),
+        ("ec_corners", "one invocation per corner texel", "........XR.."),
+        ("ec_protect", "per texel: protect edges", "RR.....RX..."),
+        ("ec_find", "per texel: flag artifacts", "RRRRR..RX..."),
+        ("ec_apply", "per texel: flagged → median", "RR.....XR..."),
+        ("store", "per texel: into the atlas", "RR.....R..W."),
+        ("text (render)", "instanced quads, every frame", "..........RR"),
+    ];
+    let (x0, label_w, cw, rh, top) = (20.0, 250.0, 54.0, 34.0, 120.0);
+    let w = x0 + label_w + cw * cols.len() as f64 + 20.0;
+    let mut svg = Svg::new(w, top + rh * rows.len() as f64 + 70.0);
+    svg.heading(
+        20.0,
+        30.0,
+        "The passes of a flush, and what each one touches",
+        "Error correction (ec_*) runs when it is enabled; the text pass draws from the atlas every frame",
+    );
+    for (i, c) in cols.iter().enumerate() {
+        let x = x0 + label_w + (i as f64 + 0.5) * cw;
+        svg.add(format!(
+            r#"<text x="{x:.1}" y="{:.1}" font-size="11.5" fill="{INK}" text-anchor="start" transform="rotate(-35 {x:.1} {:.1})">{c}</text>"#,
+            top - 10.0,
+            top - 10.0
+        ));
+    }
+    for (r, (pass, what, cells)) in rows.iter().enumerate() {
+        let y = top + r as f64 * rh;
+        if r % 2 == 0 {
+            svg.add(format!(
+                r##"<rect x="{x0}" y="{y:.1}" width="{:.1}" height="{rh}" fill="#f6f8fa"/>"##,
+                w - 2.0 * x0
+            ));
+        }
+        svg.text(x0 + 8.0, y + 15.0, 13.0, INK, "start", 600, pass);
+        svg.text(x0 + 8.0, y + 29.0, 11.0, MUTED, "start", 400, what);
+        for (i, ch) in cells.chars().enumerate() {
+            let (fill, text, color) = match ch {
+                'R' => ("#dbe8f6", "read", "#2f5f99"),
+                'W' => ("#e07b1f", "write", "#ffffff"),
+                'X' => ("#f4b26b", "r/w", "#5a3200"),
+                'U' => ("#8c959f", "copy", "#ffffff"),
+                _ => continue,
+            };
+            let x = x0 + label_w + i as f64 * cw + 4.0;
+            svg.add(format!(
+                r#"<rect x="{x:.1}" y="{:.1}" width="{:.1}" height="{:.1}" rx="4" fill="{fill}"/>"#,
+                y + 6.0,
+                cw - 8.0,
+                rh - 12.0
+            ));
+            svg.text(x + (cw - 8.0) / 2.0, y + 21.5, 10.5, color, "middle", 600, text);
+        }
+    }
+    svg.text(
+        x0,
+        top + rh * rows.len() as f64 + 26.0,
+        12.0,
+        MUTED,
+        "start",
+        400,
+        "Two bind groups per batch, distance (0–7) and error correction (0–4, 7–9): at most 8 storage buffers each, as WebGPU allows.",
+    );
+    svg.text(
+        x0,
+        top + rh * rows.len() as f64 + 44.0,
+        12.0,
+        MUTED,
+        "start",
+        400,
+        "The store pass binds the atlas as a storage texture; the text pass samples it, with the glyph instances as a vertex buffer.",
+    );
+    svg.finish()
 }

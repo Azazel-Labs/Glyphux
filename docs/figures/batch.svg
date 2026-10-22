@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 686" width="940" height="686" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+<rect width="940" height="686" rx="10" fill="#ffffff"/>
+<text x="20.0" y="30.0" font-size="15" fill="#24292f" text-anchor="start" font-weight="600">One batch: every glyph generated in a frame, in ten storage buffers</text>
+<text x="20.0" y="48.0" font-size="12" fill="#6e7781" text-anchor="start" font-weight="400">Real sizes for Inter 'G', 'p' and 'u' at 32 texels per em; bar length ~ sqrt(bytes), split per glyph; glyph 1's record offsets shown</text>
+<text x="250.0" y="82.0" font-size="11.5" fill="#6e7781" text-anchor="start" font-weight="600">BINDING · BUFFER · ELEMENT</text>
+<text x="20.0" y="113.0" font-size="13" fill="#24292f" text-anchor="start" font-weight="600">0  glyphs</text>
+<text x="38.0" y="129.0" font-size="11.5" fill="#6e7781" text-anchor="start" font-weight="400">Glyph record · 144 B</text>
+<rect x="250.0" y="100.0" width="22.0" height="20" fill="#3b82c4" stroke="#ffffff" stroke-width="1.2"/>
+<rect x="272.0" y="100.0" width="22.0" height="20" fill="#e07b1f" stroke="#ffffff" stroke-width="1.2"/>
+<path d="M272.0,100.0v-7" stroke="#e07b1f" stroke-width="1.5"/>
+<text x="275.0" y="96.5" font-size="10.5" fill="#e07b1f" text-anchor="start" font-weight="600">glyphs[1]</text>
+<rect x="294.0" y="100.0" width="22.0" height="20" fill="#2a9d8f" stroke="#ffffff" stroke-width="1.2"/>
+<text x="326.0" y="114.0" font-size="12" fill="#24292f" text-anchor="start" font-weight="500">432 B</text>
+<text x="20.0" y="157.0" font-size="13" fill="#24292f" text-anchor="start" font-weight="600">1  work</text>
+<text x="38.0" y="173.0" font-size="11.5" fill="#6e7781" text-anchor="start" font-weight="400">(glyph, tile) · 8 B</text>
+<rect x="250.0" y="144.0" width="23.6" height="20" fill="#3b82c4" stroke="#ffffff" stroke-width="1.2"/>
+<rect x="273.6" y="144.0" width="17.7" height="20" fill="#e07b1f" stroke="#ffffff" stroke-width="1.2"/>
+<path d="M273.6,144.0v-7" stroke="#e07b1f" stroke-width="1.5"/>
+<text x="276.6" y="140.5" font-size="10.5" fill="#e07b1f" text-anchor="start" font-weight="600">(1, 0 … 11)</text>
+<rect x="291.4" y="144.0" width="13.3" height="20" fill="#2a9d8f" stroke="#ffffff" stroke-width="1.2"/>
+<text x="314.7" y="158.0" font-size="12" fill="#24292f" text-anchor="start" font-weight="500">296 B</text>
+<text x="20.0" y="201.0" font-size="13" fill="#24292f" text-anchor="start" font-weight="600">2  edges</text>
+<text x="38.0" y="217.0" font-size="11.5" fill="#6e7781" text-anchor="start" font-weight="400">Edge · 128 B</text>
+<rect x="250.0" y="188.0" width="73.9" height="20" fill="#3b82c4" stroke="#ffffff" stroke-width="1.2"/>
+<text x="286.9" y="202.0" font-size="11" fill="#ffffff" text-anchor="middle" font-weight="600">13</text>
+<rect x="323.9" y="188.0" width="85.2" height="20" fill="#e07b1f" stroke="#ffffff" stroke-width="1.2"/>
+<text x="366.5" y="202.0" font-size="11" fill="#ffffff" text-anchor="middle" font-weight="600">15</text>
+<path d="M323.9,188.0v-7" stroke="#e07b1f" stroke-width="1.5"/>
+<text x="326.9" y="184.5" font-size="10.5" fill="#e07b1f" text-anchor="start" font-weight="600">edge_offset = 13</text>
+<rect x="409.1" y="188.0" width="68.2" height="20" fill="#2a9d8f" stroke="#ffffff" stroke-width="1.2"/>
+<text x="443.2" y="202.0" font-size="11" fill="#ffffff" text-anchor="middle" font-weight="600">12</text>
+<text x="487.3" y="202.0" font-size="12" fill="#24292f" text-anchor="start" font-weight="500">5.0 KB</text>
+<text x="20.0" y="245.0" font-size="13" fill="#24292f" text-anchor="start" font-weight="600">3  contours</text>
+<text x="38.0" y="261.0" font-size="11.5" fill="#6e7781" text-anchor="start" font-weight="400">Contour · 16 B</text>
+<rect x="250.0" y="232.0" width="9.0" height="20" fill="#3b82c4" stroke="#ffffff" stroke-width="1.2"/>
+<rect x="259.0" y="232.0" width="18.0" height="20" fill="#e07b1f" stroke="#ffffff" stroke-width="1.2"/>
+<path d="M259.0,232.0v-7" stroke="#e07b1f" stroke-width="1.5"/>
+<text x="262.0" y="228.5" font-size="10.5" fill="#e07b1f" text-anchor="start" font-weight="600">contour_offset = 1</text>
+<rect x="277.0" y="232.0" width="9.0" height="20" fill="#2a9d8f" stroke="#ffffff" stroke-width="1.2"/>
+<text x="296.0" y="246.0" font-size="12" fill="#24292f" text-anchor="start" font-weight="500">64 B</text>
+<text x="20.0" y="289.0" font-size="13" fill="#24292f" text-anchor="start" font-weight="600">4  curves</text>
+<text x="38.0" y="305.0" font-size="11.5" fill="#6e7781" text-anchor="start" font-weight="400">f32 · 4 B</text>
+<rect x="250.0" y="276.0" width="132.1" height="20" fill="#3b82c4" stroke="#ffffff" stroke-width="1.2"/>
+<text x="316.1" y="290.0" font-size="11" fill="#ffffff" text-anchor="middle" font-weight="600">1119</text>
+<rect x="382.1" y="276.0" width="134.6" height="20" fill="#e07b1f" stroke="#ffffff" stroke-width="1.2"/>
+<text x="449.4" y="290.0" font-size="11" fill="#ffffff" text-anchor="middle" font-weight="600">1140</text>
+<path d="M382.1,276.0v-7" stroke="#e07b1f" stroke-width="1.5"/>
+<text x="385.1" y="272.5" font-size="10.5" fill="#e07b1f" text-anchor="start" font-weight="600">curve_offset = 1119</text>
+<rect x="516.7" y="276.0" width="75.2" height="20" fill="#2a9d8f" stroke="#ffffff" stroke-width="1.2"/>
+<text x="554.3" y="290.0" font-size="11" fill="#ffffff" text-anchor="middle" font-weight="600">637</text>
+<text x="601.9" y="290.0" font-size="12" fill="#24292f" text-anchor="start" font-weight="500">11.3 KB</text>
+<text x="20.0" y="333.0" font-size="13" fill="#24292f" text-anchor="start" font-weight="600">5  tile_groups</text>
+<text x="38.0" y="349.0" font-size="11.5" fill="#6e7781" text-anchor="start" font-weight="400">TileGroup · 32 B</text>
+<rect x="250.0" y="320.0" width="41.1" height="20" fill="#3b82c4" stroke="#ffffff" stroke-width="1.2"/>
+<text x="270.5" y="334.0" font-size="11" fill="#ffffff" text-anchor="middle" font-weight="600">16</text>
+<rect x="291.1" y="320.0" width="61.6" height="20" fill="#e07b1f" stroke="#ffffff" stroke-width="1.2"/>
+<text x="321.9" y="334.0" font-size="11" fill="#ffffff" text-anchor="middle" font-weight="600">24</text>
+<path d="M291.1,320.0v-7" stroke="#e07b1f" stroke-width="1.5"/>
+<text x="294.1" y="316.5" font-size="10.5" fill="#e07b1f" text-anchor="start" font-weight="600">tile_offset = 16</text>
+<rect x="352.7" y="320.0" width="23.1" height="20" fill="#2a9d8f" stroke="#ffffff" stroke-width="1.2"/>
+<text x="385.8" y="334.0" font-size="12" fill="#24292f" text-anchor="start" font-weight="500">1.5 KB</text>
+<text x="20.0" y="377.0" font-size="13" fill="#24292f" text-anchor="start" font-weight="600">6  cands</text>
+<text x="38.0" y="393.0" font-size="11.5" fill="#6e7781" text-anchor="start" font-weight="400">(edge, bound) · 8 B</text>
+<rect x="250.0" y="364.0" width="71.0" height="20" fill="#3b82c4" stroke="#ffffff" stroke-width="1.2"/>
+<text x="285.5" y="378.0" font-size="11" fill="#ffffff" text-anchor="middle" font-weight="600">154</text>
+<rect x="321.0" y="364.0" width="68.2" height="20" fill="#e07b1f" stroke="#ffffff" stroke-width="1.2"/>
+<text x="355.1" y="378.0" font-size="11" fill="#ffffff" text-anchor="middle" font-weight="600">148</text>
+<path d="M321.0,364.0v-7" stroke="#e07b1f" stroke-width="1.5"/>
+<text x="324.0" y="360.5" font-size="10.5" fill="#e07b1f" text-anchor="start" font-weight="600">cand_offset = 154</text>
+<rect x="389.2" y="364.0" width="36.0" height="20" fill="#2a9d8f" stroke="#ffffff" stroke-width="1.2"/>
+<text x="407.2" y="378.0" font-size="11" fill="#ffffff" text-anchor="middle" font-weight="600">78</text>
+<text x="435.2" y="378.0" font-size="12" fill="#24292f" text-anchor="start" font-weight="500">3.0 KB</text>
+<text x="20.0" y="421.0" font-size="13" fill="#24292f" text-anchor="start" font-weight="600">7  field</text>
+<text x="38.0" y="437.0" font-size="11.5" fill="#6e7781" text-anchor="start" font-weight="400">vec4&lt;f32&gt; texel · 16 B</text>
+<rect x="250.0" y="408.0" width="224.9" height="20" fill="#dbe8f6" stroke="#3b82c4" stroke-width="1.2"/>
+<text x="362.5" y="422.0" font-size="11" fill="#3b82c4" text-anchor="middle" font-weight="600">780</text>
+<rect x="474.9" y="408.0" width="196.7" height="20" fill="#fbe5cf" stroke="#e07b1f" stroke-width="1.2"/>
+<text x="573.3" y="422.0" font-size="11" fill="#e07b1f" text-anchor="middle" font-weight="600">682</text>
+<path d="M474.9,408.0v-7" stroke="#e07b1f" stroke-width="1.5"/>
+<text x="477.9" y="404.5" font-size="10.5" fill="#e07b1f" text-anchor="start" font-weight="600">field_offset = 780</text>
+<rect x="671.6" y="408.0" width="138.4" height="20" fill="#d6efec" stroke="#2a9d8f" stroke-width="1.2"/>
+<text x="740.8" y="422.0" font-size="11" fill="#2a9d8f" text-anchor="middle" font-weight="600">480</text>
+<text x="820.0" y="422.0" font-size="12" fill="#24292f" text-anchor="start" font-weight="500">30.3 KB</text>
+<text x="20.0" y="465.0" font-size="13" fill="#24292f" text-anchor="start" font-weight="600">8  stencil</text>
+<text x="38.0" y="481.0" font-size="11.5" fill="#6e7781" text-anchor="start" font-weight="400">u32 flags · 4 B</text>
+<rect x="250.0" y="452.0" width="112.5" height="20" fill="#dbe8f6" stroke="#3b82c4" stroke-width="1.2"/>
+<text x="306.2" y="466.0" font-size="11" fill="#3b82c4" text-anchor="middle" font-weight="600">780</text>
+<rect x="362.5" y="452.0" width="98.3" height="20" fill="#fbe5cf" stroke="#e07b1f" stroke-width="1.2"/>
+<text x="411.6" y="466.0" font-size="11" fill="#e07b1f" text-anchor="middle" font-weight="600">682</text>
+<path d="M362.5,452.0v-7" stroke="#e07b1f" stroke-width="1.5"/>
+<text x="365.5" y="448.5" font-size="10.5" fill="#e07b1f" text-anchor="start" font-weight="600">field_offset = 780</text>
+<rect x="460.8" y="452.0" width="69.2" height="20" fill="#d6efec" stroke="#2a9d8f" stroke-width="1.2"/>
+<text x="495.4" y="466.0" font-size="11" fill="#2a9d8f" text-anchor="middle" font-weight="600">480</text>
+<text x="540.0" y="466.0" font-size="12" fill="#24292f" text-anchor="start" font-weight="500">7.6 KB</text>
+<text x="20.0" y="509.0" font-size="13" fill="#24292f" text-anchor="start" font-weight="600">9  corners</text>
+<text x="38.0" y="525.0" font-size="11.5" fill="#6e7781" text-anchor="start" font-weight="400">u32 texel · 4 B</text>
+<rect x="250.0" y="496.0" width="16.6" height="20" fill="#3b82c4" stroke="#ffffff" stroke-width="1.2"/>
+<rect x="266.6" y="496.0" width="22.2" height="20" fill="#e07b1f" stroke="#ffffff" stroke-width="1.2"/>
+<path d="M266.6,496.0v-7" stroke="#e07b1f" stroke-width="1.5"/>
+<text x="269.6" y="492.5" font-size="10.5" fill="#e07b1f" text-anchor="start" font-weight="600">batch texel indices</text>
+<rect x="288.8" y="496.0" width="19.4" height="20" fill="#2a9d8f" stroke="#ffffff" stroke-width="1.2"/>
+<text x="318.2" y="510.0" font-size="12" fill="#24292f" text-anchor="start" font-weight="500">336 B</text>
+<rect x="20.0" y="539.0" width="14" height="14" fill="#3b82c4"/>
+<text x="40.0" y="550.0" font-size="12" fill="#24292f" text-anchor="start" font-weight="400">glyph 0: 'G', 26×30 texels, 4×4 tiles of 8×8, 1 contour</text>
+<rect x="20.0" y="557.0" width="14" height="14" fill="#e07b1f"/>
+<text x="40.0" y="568.0" font-size="12" fill="#24292f" text-anchor="start" font-weight="400">glyph 1: 'p', 22×31 texels, 3×4 tiles of 8×8, 2 contours</text>
+<rect x="20.0" y="575.0" width="14" height="14" fill="#2a9d8f"/>
+<text x="40.0" y="586.0" font-size="12" fill="#24292f" text-anchor="start" font-weight="400">glyph 2: 'u', 20×24 texels, 3×3 tiles of 8×8, 1 contour</text>
+<text x="20.0" y="638.0" font-size="12" fill="#6e7781" text-anchor="start" font-weight="400">Solid: uploaded each flush (one staging buffer, copied in the command encoder, in order with the passes).</text>
+<text x="20.0" y="656.0" font-size="12" fill="#6e7781" text-anchor="start" font-weight="400">Outlined: written by the GPU passes. Buffers are reused from batch to batch, grown to the next power of two.</text>
+<text x="20.0" y="674.0" font-size="12" fill="#6e7781" text-anchor="start" font-weight="400">curves holds each cubic's interval data, then its sign-correction scanlines (scan_offset).</text>
+</svg>

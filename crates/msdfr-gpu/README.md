@@ -15,7 +15,8 @@ f32 breaks the tie the other way — at most a few dozen of ~600 000 values, see
 ## How it works
 
 The workspace [README](../../README.md#how-it-works) walks through the pipeline with figures
-drawn from real output. In short:
+drawn from real output, including [the buffers of a batch](../../README.md#inside-a-gpu-batch)
+and the passes over them. In short:
 
 ![The pipeline](../../docs/figures/pipeline.svg)
 

@@ -98,6 +98,52 @@ or spur in the glyph. Error correction finds those texels, using msdfgen's rules
 distance checks, and flattens them to their median: they lose the sharp corner but stop
 causing artifacts. On the GPU this is four more passes over the same batch.
 
+### Inside a GPU batch
+
+All the glyphs that are new in a frame are generated together, in one set of buffers and one
+dispatch per pass. Each storage buffer is the concatenation of every glyph's part of it. A
+glyph's own record (binding 0) says where its parts start, so one shader invocation can find
+everything about its glyph from a glyph index alone.
+
+![The ten storage buffers of a three-glyph batch, split per glyph, with one glyph's offsets into each](docs/figures/batch.svg)
+
+- The CPU fills the solid buffers: the records, the work list, the outline (edges, contours,
+  and curve data for cubics and the sign-correction scanlines), and the tile binning
+  (candidate lists and their bounds). They go up through one staging buffer, copied inside the
+  command encoder. Uploads therefore land in order with the passes that read them, and a frame
+  may flush any number of batches before it submits.
+- The GPU writes the outlined buffers: the field (one `vec4` per texel) and the error
+  correction's per-texel flags.
+- Buffers persist from batch to batch and grow to the next power of two. Frames without new
+  glyphs allocate nothing; a flush with new glyphs creates only its staging buffer.
+
+![How one invocation finds its tile's candidates, its edges, its texel and its place in the atlas](docs/figures/lookup.svg)
+
+The work list has one entry per tile of every glyph, `(glyph, tile)`. Each entry becomes one
+8×8 workgroup, and each invocation in it computes one texel. From the glyph record, the
+invocation finds:
+1. its tile's group records: one per contour, with upper bounds on the distance per channel;
+2. the candidate edges of each group, sorted by a lower bound, so the scan stops once no
+   remaining edge can be nearer;
+3. those edges;
+4. the field texel it writes.
+
+The atlas store pass then copies that texel into the glyph's rectangle of the texture array.
+
+![Which buffers each pass of a flush reads and writes](docs/figures/passes.svg)
+
+A flush runs these passes in order:
+1. the upload;
+2. the distance pass;
+3. four error correction passes, when error correction is on. They share the field and a
+   per-texel stencil of flags: protect the corner texels, protect texels at edges, flag
+   artifacts, then flatten the flagged texels to their median.
+4. the store into the atlas.
+
+The bindings form two bind groups, distance and error correction, so neither exceeds WebGPU's
+limit of 8 storage buffers per pass. Drawing text is separate and runs every frame: an
+instanced quad per glyph samples the atlas, whether or not anything was generated.
+
 ### The atlas
 
 ![A corner of a GPU atlas layer with glyphs at several sizes](docs/figures/atlas.png)
