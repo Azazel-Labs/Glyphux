@@ -381,12 +381,17 @@ fn sign_correction<const N: usize>(
 
 /// Signed pseudo-distance (in shape units) from `p` to the shape - useful for testing and
 /// for custom evaluation.
+///
+/// Each call sets up a fresh evaluator (several allocations sized by the edge count) and
+/// scans every edge: fine for occasional queries, slow in a loop over many points, where
+/// generating a field does the same work with culling and reuse.
 pub fn shape_distance(ps: &PreparedShape, p: Vec2, overlap: bool) -> f64 {
     let mut ev = Evaluator::<1, false>::new(ps, overlap);
     ev.distance(p)[0]
 }
 
-/// Exact true signed distance (in shape units) from `p` to the shape.
+/// Exact true signed distance (in shape units) from `p` to the shape. Costs as
+/// [`shape_distance`].
 pub fn shape_true_distance(ps: &PreparedShape, p: Vec2, overlap: bool) -> f64 {
     let mut ev = Evaluator::<0, true>::new(ps, overlap);
     ev.distance(p)[3]
