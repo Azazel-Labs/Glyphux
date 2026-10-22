@@ -256,7 +256,7 @@ fn load_glyph(path: &PathBuf, code: &str, vars: &[(String, f32)], scaling: FontS
         .filter(|s| s.starts_with(|c: char| c.is_ascii_digit()))
     {
         let id = parse_int(g).unwrap_or_else(|| die("invalid glyph index"));
-        font.glyph_by_index(id as u16)
+        font.glyph_by_index(u16::try_from(id).unwrap_or_else(|_| die(format!("glyph index {id} out of range"))))
     } else {
         let c = if code.len() >= 3 && code.starts_with('\'') && code.ends_with('\'') {
             code[1..code.len() - 1].chars().next().unwrap()
