@@ -26,5 +26,9 @@ name = "glyphs"
 harness = false
 required-features = ["font"]
 
+[[test]]
+name = "regression"
+required-features = ["font"]
+
 [lints]
 workspace = true

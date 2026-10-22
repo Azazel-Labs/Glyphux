@@ -1578,6 +1578,7 @@ mod tests {
         assert!(t > 0.1 && t < 0.25, "{t}");
     }
 
+    #[cfg(feature = "font")]
     fn brute_cubic(pts: [Vec2; 4], p: Vec2) -> f64 {
         let seg = Segment::Cubic(pts);
         let g = |t: f64| (seg.point(t) - p).length_squared();
