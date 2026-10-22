@@ -594,15 +594,8 @@ impl LineData {
     }
 }
 
-/// Builds the signed distance result for a nearest point at an endpoint.
-#[inline(always)]
-pub(crate) fn endpoint_distance(p: Vec2, ep: Vec2, dir: Vec2, at_end: bool, dist2: f64) -> (SignedDistance, f64) {
-    let dir_len2 = dir.length_squared();
-    let inv = if dir_len2 > 0.0 { 1.0 / dir_len2 } else { 0.0 };
-    endpoint_distance_pre(p, ep, dir, dir.normalize_or_zero(), inv, at_end, dist2)
-}
-
-/// [`endpoint_distance`] with the unit direction and inverse squared length precomputed.
+/// Builds the signed distance result for a nearest point at an endpoint, from the edge's
+/// direction there, its unit vector and inverse squared length (precomputed per edge).
 #[inline(always)]
 pub(crate) fn endpoint_distance_pre(
     p: Vec2,
@@ -828,8 +821,8 @@ impl QuadData {
             flo = fhi;
         }
         match best_kind {
-            0 => endpoint_distance(p, pts[0], self.dir0, false, best),
-            2 => endpoint_distance(p, pts[2], self.dir1, true, best),
+            0 => endpoint_distance_pre(p, pts[0], self.dir0, self.unit0, self.inv_len2_0, false, best),
+            2 => endpoint_distance_pre(p, pts[2], self.dir1, self.unit1, self.inv_len2_1, true, best),
             _ => {
                 let t = best_t;
                 *hint = t;
@@ -904,8 +897,8 @@ impl QuadData {
             flo = fhi;
         }
         match best_kind {
-            0 => endpoint_distance(p, pts[0], self.dir0, false, best),
-            2 => endpoint_distance(p, pts[2], self.dir1, true, best),
+            0 => endpoint_distance_pre(p, pts[0], self.dir0, self.unit0, self.inv_len2_0, false, best),
+            2 => endpoint_distance_pre(p, pts[2], self.dir1, self.unit1, self.inv_len2_1, true, best),
             _ => {
                 let t = best_t;
                 let q = qa + (2.0 * t) * self.ab + (t * t) * self.br; // B(t) - p
