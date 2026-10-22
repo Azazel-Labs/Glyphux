@@ -72,8 +72,9 @@ pub fn parse_transform(s: &str) -> Result<Affine, SvgError> {
         if rest.is_empty() {
             break;
         }
-        let open = rest.find('(').ok_or_else(|| SvgError(format!("bad transform '{s}'")))?;
-        let close = rest.find(')').ok_or_else(|| SvgError(format!("bad transform '{s}'")))?;
+        let bad = || SvgError(format!("bad transform '{s}'"));
+        let open = rest.find('(').ok_or_else(bad)?;
+        let close = open + rest[open..].find(')').ok_or_else(bad)?;
         let name = rest[..open].trim();
         let mut nums = Vec::new();
         let mut lx = Lexer::new(&rest[open + 1..close]);
@@ -825,6 +826,15 @@ pub fn load_svg(doc: &str, selection: SvgPathSelection) -> Result<SvgShape, SvgE
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn malformed_transforms_are_errors() {
+        for t in ["rotate)(1)", "a)(", "scale(2", ")", "translate 1 2"] {
+            assert!(parse_transform(t).is_err(), "{t}");
+        }
+        let doc = r#"<svg><path transform="a)(" d="M0 0h1v1z"/></svg>"#;
+        assert!(load_svg(doc, SvgPathSelection::All).is_err());
+    }
 
     #[test]
     fn path_commands() {
