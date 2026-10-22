@@ -1,7 +1,6 @@
 //! Public distance field generation API.
 
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::bitmap::Bitmap;
 use crate::correction::{DistanceCheckMode, ErrorCorrectionConfig, correct_msdf};
@@ -62,7 +61,7 @@ pub(crate) fn resolve_threads(requested: usize, rows: usize, cost: usize) -> usi
         if cost < 400_000 {
             1
         } else {
-            std::thread::available_parallelism().map_or(1, std::num::NonZero::get)
+            crate::batch::available_cores()
         }
     } else {
         requested
@@ -88,20 +87,25 @@ pub(crate) fn par_rows<T: Send, S>(
         return;
     }
     let block = (n / (threads * 8)).clamp(1, 8);
-    let slots: Vec<Mutex<Option<&mut [T]>>> = rows.into_iter().map(|r| Mutex::new(Some(r))).collect();
-    let next = AtomicUsize::new(0);
+    // One queue of rows, taken a block at a time (one lock per block).
+    let queue = Mutex::new(rows.into_iter().enumerate());
     std::thread::scope(|scope| {
         for _ in 0..threads {
             scope.spawn(|| {
                 let mut s = init();
+                let mut taken = Vec::with_capacity(block);
                 loop {
-                    let b = next.fetch_add(1, Ordering::Relaxed);
-                    let start = b * block;
-                    if start >= n {
+                    taken.extend(
+                        queue
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                            .by_ref()
+                            .take(block),
+                    );
+                    if taken.is_empty() {
                         break;
                     }
-                    for i in start..(start + block).min(n) {
-                        let row = slots[i].lock().unwrap().take().unwrap();
+                    for (i, row) in taken.drain(..) {
                         f(i, &mut s, row);
                     }
                 }
