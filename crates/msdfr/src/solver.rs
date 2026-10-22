@@ -180,6 +180,6 @@ mod tests {
         let r = solve_quadratic(0.0, 2.0, -1.0);
         assert_eq!(r.as_slice(), &[0.5]);
         let r = solve_quadratic(1.0, 0.0, 1.0);
-        assert!(r.as_slice().is_empty());
+        assert_eq!(r.as_slice(), &[] as &[f64]);
     }
 }
