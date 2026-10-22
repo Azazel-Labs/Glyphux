@@ -1432,49 +1432,6 @@ impl CubicData {
     }
 }
 
-/// Benchmark helper (not part of the API): like [`bench_cubic`] for a quadratic (warm-started
-/// kernel if `warm`, else the closed form).
-#[doc(hidden)]
-pub fn bench_quad(pts: [Vec2; 3], ps: &[Vec2], warm: bool) -> (f64, std::time::Duration) {
-    let q = QuadData::new(&pts);
-    let t0 = std::time::Instant::now();
-    let mut acc = 0.0;
-    let mut h = 0.5;
-    for &p in ps {
-        acc += if warm {
-            q.signed_distance_warm(&pts, p, &mut h).0.distance.powi(2)
-        } else {
-            q.signed_distance(&pts, p).0.distance.powi(2)
-        };
-    }
-    (acc, t0.elapsed())
-}
-
-/// Benchmark helper (not part of the API): sums squared distances from `ps` to the cubic,
-/// with or without warm starts.
-#[doc(hidden)]
-pub fn bench_cubic(pts: [Vec2; 4], ps: &[Vec2], warm: bool) -> (f64, std::time::Duration) {
-    let c = CubicData::new(&pts);
-    let t0 = std::time::Instant::now();
-    let mut acc = 0.0;
-    let mut h = -1.0;
-    for &p in ps {
-        if !warm {
-            h = -1.0;
-        }
-        acc += c.signed_distance_hint(p, &mut h).0.distance.powi(2);
-    }
-    (acc, t0.elapsed())
-}
-
-/// Debug helper (not part of the API): nearest point query on a cubic with the production
-/// kernel, returning (signed distance, parameter).
-#[doc(hidden)]
-pub fn debug_cubic_distance(pts: [Vec2; 4], p: Vec2, hint: &mut f64) -> (f64, f64) {
-    let (sd, t) = CubicData::new(&pts).signed_distance_hint(p, hint);
-    (sd.distance, t)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1611,5 +1568,88 @@ mod tests {
             .fold(f64::MAX, f64::min);
         assert!(sd.distance.abs() <= brute + 1e-12, "{} vs {brute} (t={t})", sd.distance);
         assert!(t > 0.1 && t < 0.25, "{t}");
+    }
+
+    fn brute_cubic(pts: [Vec2; 4], p: Vec2) -> f64 {
+        let seg = Segment::Cubic(pts);
+        let g = |t: f64| (seg.point(t) - p).length_squared();
+        let n = 4000;
+        let (mut best, mut best_t) = (f64::MAX, 0.0);
+        for i in 0..=n {
+            let t = i as f64 / n as f64;
+            if g(t) < best {
+                (best, best_t) = (g(t), t);
+            }
+        }
+        // Golden-section refinement around the best sample.
+        let (mut a, mut b) = ((best_t - 1.0 / n as f64).max(0.0), (best_t + 1.0 / n as f64).min(1.0));
+        for _ in 0..100 {
+            let m1 = a + (b - a) * 0.381966;
+            let m2 = a + (b - a) * 0.618034;
+            if g(m1) < g(m2) {
+                b = m2;
+            } else {
+                a = m1;
+            }
+        }
+        g(f64::midpoint(a, b)).min(best).sqrt()
+    }
+
+    /// The exact cubic nearest-point kernel is never farther than brute force, on a grid of points
+    /// around every cubic edge of the font's printable ASCII glyphs (CFF fonts have cubics).
+    #[cfg(feature = "font")]
+    #[test]
+    #[ignore = "slow; run with --release -- --ignored"]
+    fn cubic_kernel_matches_brute_force() {
+        let path = std::env::var("MSDFR_TEST_FONT").unwrap_or_else(|_| {
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../examples/web-demo/assets/Inter-Regular.otf"
+            )
+            .into()
+        });
+        let data = std::fs::read(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
+        let font = crate::io::font::Font::from_bytes(&data, 0, crate::io::font::FontScaling::EmNormalized).unwrap();
+        let (mut checked, mut bad) = (0u64, Vec::new());
+        for c in 33u8..127 {
+            let Ok(g) = font.glyph(c as char) else {
+                continue;
+            };
+            let b = g.shape.bounds();
+            if b.is_empty() {
+                continue;
+            }
+            let pad = 0.05;
+            for e in g.shape.contours.iter().flat_map(|c| &c.edges) {
+                let Segment::Cubic(pts) = e.segment else {
+                    continue;
+                };
+                let cubic = CubicData::new(&pts);
+                let mut hint = -1.0;
+                let steps = 16;
+                for iy in 0..=steps {
+                    for ix in 0..=steps {
+                        let p = Vec2::new(
+                            b.left - pad + (b.width() + 2.0 * pad) * ix as f64 / steps as f64,
+                            b.bottom - pad + (b.height() + 2.0 * pad) * iy as f64 / steps as f64,
+                        );
+                        let d = cubic.signed_distance_hint(p, &mut hint).0.distance;
+                        let bd = brute_cubic(pts, p);
+                        checked += 1;
+                        if d.abs() > bd + 1e-9 {
+                            bad.push(format!("{:?} p={p:?}: kernel {} brute {bd}", c as char, d.abs()));
+                        }
+                    }
+                }
+            }
+        }
+        assert!(checked > 0, "the font has no cubic edges");
+        let shown = bad.len().min(10);
+        assert!(
+            bad.is_empty(),
+            "{} of {checked} queries worse than brute force:\n{}",
+            bad.len(),
+            bad[..shown].join("\n")
+        );
     }
 }

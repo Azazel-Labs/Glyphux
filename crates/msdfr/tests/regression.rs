@@ -7,8 +7,8 @@ use std::fmt::Write;
 use msdfr::io::font::{Font, FontScaling};
 use msdfr::{
     Bitmap, DEFAULT_ANGLE_THRESHOLD, DistanceCheckMode, ErrorCorrectionConfig, ErrorCorrectionMode, GeneratorConfig,
-    Projection, Range, Segment, Shape, Transform, Vec2, debug_cubic_distance, edge_coloring_simple, generate_msdf,
-    generate_mtsdf, generate_psdf, generate_sdf,
+    Projection, Range, Shape, Transform, Vec2, edge_coloring_simple, generate_msdf, generate_mtsdf, generate_psdf,
+    generate_sdf,
 };
 
 const DEFAULT_FONT: &str = concat!(
@@ -145,79 +145,5 @@ fn fingerprint() {
         changed.is_empty(),
         "outputs changed (MSDFR_BLESS=1 to accept):\n{}",
         changed.join("\n")
-    );
-}
-
-fn brute(pts: [Vec2; 4], p: Vec2) -> f64 {
-    let seg = Segment::Cubic(pts);
-    let g = |t: f64| (seg.point(t) - p).length_squared();
-    let n = 4000;
-    let (mut best, mut best_t) = (f64::MAX, 0.0);
-    for i in 0..=n {
-        let t = i as f64 / n as f64;
-        if g(t) < best {
-            (best, best_t) = (g(t), t);
-        }
-    }
-    // Golden-section refinement around the best sample.
-    let (mut a, mut b) = ((best_t - 1.0 / n as f64).max(0.0), (best_t + 1.0 / n as f64).min(1.0));
-    for _ in 0..100 {
-        let m1 = a + (b - a) * 0.381966;
-        let m2 = a + (b - a) * 0.618034;
-        if g(m1) < g(m2) {
-            b = m2;
-        } else {
-            a = m1;
-        }
-    }
-    g(f64::midpoint(a, b)).min(best).sqrt()
-}
-
-/// The exact cubic nearest-point kernel is never farther than brute force, on a grid of points
-/// around every cubic edge of the font's printable ASCII glyphs (CFF fonts have cubics).
-#[test]
-#[ignore = "slow; run with --release -- --ignored"]
-fn cubic_kernel_matches_brute_force() {
-    let data = font_data();
-    let font = Font::from_bytes(&data, 0, FontScaling::EmNormalized).unwrap();
-    let (mut checked, mut bad) = (0u64, Vec::new());
-    for c in 33u8..127 {
-        let Ok(g) = font.glyph(c as char) else {
-            continue;
-        };
-        let b = g.shape.bounds();
-        if b.is_empty() {
-            continue;
-        }
-        let pad = 0.05;
-        for e in g.shape.contours.iter().flat_map(|c| &c.edges) {
-            let Segment::Cubic(pts) = e.segment else {
-                continue;
-            };
-            let mut hint = -1.0;
-            let steps = 16;
-            for iy in 0..=steps {
-                for ix in 0..=steps {
-                    let p = Vec2::new(
-                        b.left - pad + (b.width() + 2.0 * pad) * ix as f64 / steps as f64,
-                        b.bottom - pad + (b.height() + 2.0 * pad) * iy as f64 / steps as f64,
-                    );
-                    let (d, _) = debug_cubic_distance(pts, p, &mut hint);
-                    let bd = brute(pts, p);
-                    checked += 1;
-                    if d.abs() > bd + 1e-9 {
-                        bad.push(format!("{:?} p={p:?}: kernel {} brute {bd}", c as char, d.abs()));
-                    }
-                }
-            }
-        }
-    }
-    assert!(checked > 0, "the font has no cubic edges");
-    let shown = bad.len().min(10);
-    assert!(
-        bad.is_empty(),
-        "{} of {checked} queries worse than brute force:\n{}",
-        bad.len(),
-        bad[..shown].join("\n")
     );
 }

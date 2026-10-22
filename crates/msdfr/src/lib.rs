@@ -49,8 +49,6 @@ pub use coloring::{
     edge_coloring_ink_trap, edge_coloring_simple,
 };
 pub use correction::{DistanceCheckMode, ErrorCorrectionConfig, ErrorCorrectionMode, correct_msdf_fast};
-#[doc(hidden)]
-pub use edge::debug_cubic_distance;
 pub use edge::{Edge, EdgeColor, Segment, SignedDistance};
 pub use eval::PreparedShape;
 pub use generate::{
