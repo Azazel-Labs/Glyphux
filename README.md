@@ -1,7 +1,7 @@
-# msdfr
+# Textra
 
-[![CI](https://github.com/Azazel-Labs/Glyst/actions/workflows/ci.yml/badge.svg)](https://github.com/Azazel-Labs/Glyst/actions/workflows/ci.yml)
-· [Live web demo](https://azazel-labs.github.io/Glyst/) (WebGPU)
+[![CI](https://github.com/Azazel-Labs/Textra/actions/workflows/ci.yml/badge.svg)](https://github.com/Azazel-Labs/Textra/actions/workflows/ci.yml)
+· [Live web demo](https://azazel-labs.github.io/Textra/) (WebGPU)
 
 A pure Rust generator of signed distance fields for vector shapes and font glyphs:
 true SDF, pseudo-SDF, **multi-channel SDF (MSDF)** and **MSDF with the true SDF in alpha (MTSDF)**.

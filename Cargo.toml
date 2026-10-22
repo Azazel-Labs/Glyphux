@@ -9,7 +9,7 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT"
-repository = "https://github.com/Azazel-Labs/Glyst"
+repository = "https://github.com/Azazel-Labs/Textra"
 
 [workspace.dependencies]
 msdfr = { path = "crates/msdfr", version = "0.1.0" }

@@ -1,6 +1,6 @@
 # msdfr-gpu web demo
 
-Live: https://azazel-labs.github.io/Glyst/ (deployed by CI from main).
+Live: https://azazel-labs.github.io/Textra/ (deployed by CI from main).
 
 The `msdfr_gpu::demo::Scene` in a browser canvas on WebGPU. Every glyph's field is generated
 on the GPU the first time it is needed at a size level; nothing is pre-baked.
