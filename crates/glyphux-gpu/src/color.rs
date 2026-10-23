@@ -98,6 +98,7 @@ pub struct ColorRenderer {
     config: ColorAtlasConfig,
     pages: Vec<Page>,
     instances: Option<wgpu::Buffer>,
+    prepared: Vec<Instance>,
     order: Vec<GlyphKey>,
 }
 
@@ -252,6 +253,7 @@ impl ColorRenderer {
             config,
             pages: Vec::new(),
             instances: None,
+            prepared: Vec::new(),
             order: Vec::new(),
         })
     }
@@ -460,7 +462,7 @@ impl ColorRenderer {
         if viewport.iter().any(|v| !v.is_finite() || *v <= 0.0) {
             return Err(ColorError::Invalid("viewport"));
         }
-        let mut gpu = Vec::with_capacity(instances.len());
+        self.prepared.clear();
         for i in instances {
             let glyph = self
                 .glyphs
@@ -479,7 +481,7 @@ impl ColorRenderer {
                     "color glyph requires a square uniform scale above its compiled minimum and a valid rotation",
                 ));
             }
-            gpu.push(Instance {
+            self.prepared.push(Instance {
                 rect: i.rect,
                 transform: i.transform,
                 opacity: i.opacity,
@@ -491,13 +493,18 @@ impl ColorRenderer {
             0,
             bytemuck::cast_slice(&[viewport[0], viewport[1], 0.0, 0.0]),
         );
-        if !gpu.is_empty() {
-            self.instances = Some(buffer(
-                device,
-                "glyphux color instances",
-                bytemuck::cast_slice(&gpu),
-                wgpu::BufferUsages::VERTEX,
-            ));
+        if !self.prepared.is_empty() {
+            let bytes = bytemuck::cast_slice(&self.prepared);
+            let size = bytes.len() as u64;
+            if self.instances.as_ref().is_none_or(|buffer| buffer.size() < size) {
+                self.instances = Some(device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("glyphux color instances"),
+                    size: size.next_power_of_two(),
+                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                }));
+            }
+            queue.write_buffer(self.instances.as_ref().unwrap(), 0, bytes);
         }
         self.order.extend(instances.iter().map(|i| i.key));
         Ok(())

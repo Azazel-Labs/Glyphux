@@ -112,6 +112,19 @@ fn color_cpu_gpu_parity() {
                 transform: [angle.cos(), angle.sin(), pivot, pivot],
                 opacity,
             };
+            // Grow, clear, reject a partially valid batch, then shrink. The following
+            // pixel comparison must see only the final placement, never stale instances.
+            renderer
+                .prepare(&device, &queue, [side as f32; 2], &[instance; 17])
+                .unwrap();
+            renderer.prepare(&device, &queue, [side as f32; 2], &[]).unwrap();
+            let mut invalid = instance;
+            invalid.opacity = f32::NAN;
+            assert!(
+                renderer
+                    .prepare(&device, &queue, [side as f32; 2], &[instance, invalid])
+                    .is_err()
+            );
             renderer
                 .prepare(&device, &queue, [side as f32; 2], &[instance])
                 .unwrap();
