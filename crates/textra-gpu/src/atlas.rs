@@ -20,7 +20,7 @@ use crate::field::{FieldBatch, FieldGenerator, storage_entry};
 pub struct AtlasConfig {
     /// Side of each texture layer in texels.
     pub size: u32,
-    /// Number of layers of the texture array.
+    /// Maximum number of pages. Pages are added on demand before recycling inactive ones.
     pub layers: u32,
     /// `Rgba8Unorm` (compact) or `Rgba16Float` (more precision for wide ranges); also
     /// `Rgba32Float` on devices with [`wgpu::Features::FLOAT32_FILTERABLE`] (the text shader
@@ -80,7 +80,7 @@ impl Default for AtlasConfig {
     fn default() -> Self {
         AtlasConfig {
             size: 1024,
-            layers: 4,
+            layers: 2,
             format: wgpu::TextureFormat::Rgba8Unorm,
             kind: FieldKind::MTSDF,
             px_range: 4.0,
@@ -218,6 +218,7 @@ pub struct GlyphAtlas {
     config: AtlasConfig,
     texture: wgpu::Texture,
     view: wgpu::TextureView,
+    texture_pages: u32,
     generator: FieldGenerator,
     store: wgpu::ComputePipeline,
     store_layout: wgpu::BindGroupLayout,
@@ -252,15 +253,15 @@ pub struct AtlasStats {
 }
 
 impl GlyphAtlas {
-    /// Creates the atlas texture and pipelines, after checking `config` against the device.
+    /// Creates pipelines and a tiny placeholder texture. Full pages are allocated by flush.
     pub fn new(device: &wgpu::Device, config: AtlasConfig) -> Result<Self, AtlasConfigError> {
         config.validate(device)?;
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("textra atlas"),
             size: wgpu::Extent3d {
-                width: config.size,
-                height: config.size,
-                depth_or_array_layers: config.layers,
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
             },
             mip_level_count: 1,
             sample_count: 1,
@@ -268,7 +269,8 @@ impl GlyphAtlas {
             format: config.format,
             usage: wgpu::TextureUsages::STORAGE_BINDING
                 | wgpu::TextureUsages::TEXTURE_BINDING
-                | wgpu::TextureUsages::COPY_SRC,
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
         let view = texture.create_view(&wgpu::TextureViewDescriptor {
@@ -310,13 +312,14 @@ impl GlyphAtlas {
             compilation_options: wgpu::PipelineCompilationOptions::default(),
             cache: None,
         });
-        let layers = (0..config.layers).map(|_| Layer::new()).collect();
+        let layers = Vec::new();
         let workers = crate::workers::Workers::new(&config);
         Ok(GlyphAtlas {
             generator: FieldGenerator::new(device),
             config,
             texture,
             view,
+            texture_pages: 0,
             store,
             store_layout,
             entries: FxHashMap::default(),
@@ -337,6 +340,16 @@ impl GlyphAtlas {
     pub fn config(&self) -> &AtlasConfig {
         &self.config
     }
+    /// Pages in use, including placements queued for the next flush.
+    pub fn page_count(&self) -> u32 {
+        self.layers.len() as u32
+    }
+    /// Full GPU pages allocated by the last flush; zero before the first generation.
+    pub fn allocated_page_count(&self) -> u32 {
+        self.texture_pages
+    }
+    /// Current texture array. Before first generation this is a 1 by 1 placeholder.
+    /// Growth replaces the texture during flush; acquire views and bind groups afterwards.
     pub fn texture(&self) -> &wgpu::Texture {
         &self.texture
     }
@@ -587,12 +600,22 @@ impl GlyphAtlas {
 
     fn allocate(&mut self, w: u32, h: u32) -> Option<(u32, u32, u32)> {
         let size = self.config.size;
+        if w > size || h > size {
+            return None;
+        }
         for (i, l) in self.layers.iter_mut().enumerate() {
             if let Some((x, y)) = l.alloc(w, h, size) {
                 return Some((i as u32, x, y));
             }
         }
-        // Recycle the least recently used layer not used in this frame.
+        if self.layers.len() < self.config.layers as usize {
+            let mut layer = Layer::new();
+            let (x, y) = layer.alloc(w, h, size)?;
+            let index = self.layers.len() as u32;
+            self.layers.push(layer);
+            return Some((index, x, y));
+        }
+        // At the cap, recycle the least recently used layer not used in this frame.
         let frame = self.frame;
         let (i, _) = self
             .layers
@@ -664,12 +687,54 @@ impl GlyphAtlas {
         if jobs.is_empty() {
             return 0;
         }
+        self.grow_texture(device, encoder);
         let batch = self.generator.upload(device, encoder, &jobs);
         self.generator.encode_profiled(encoder, &batch, profiler.as_deref_mut());
         self.encode_store(device, encoder, &batch, profiler);
         self.stats.generated += jobs.len() as u64;
         self.stats.generated_texels += batch.texels as u64;
         jobs.len()
+    }
+
+    fn grow_texture(&mut self, device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder) {
+        let pages = self.page_count();
+        if pages <= self.texture_pages {
+            return;
+        }
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("textra atlas"),
+            size: wgpu::Extent3d {
+                width: self.config.size,
+                height: self.config.size,
+                depth_or_array_layers: pages,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: self.config.format,
+            usage: wgpu::TextureUsages::STORAGE_BINDING
+                | wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        if self.texture_pages > 0 {
+            encoder.copy_texture_to_texture(
+                self.texture.as_image_copy(),
+                texture.as_image_copy(),
+                wgpu::Extent3d {
+                    width: self.config.size,
+                    height: self.config.size,
+                    depth_or_array_layers: self.texture_pages,
+                },
+            );
+        }
+        self.view = texture.create_view(&wgpu::TextureViewDescriptor {
+            dimension: Some(wgpu::TextureViewDimension::D2Array),
+            ..Default::default()
+        });
+        self.texture = texture;
+        self.texture_pages = pages;
     }
 
     fn encode_store(

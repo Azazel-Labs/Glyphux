@@ -175,8 +175,7 @@ async fn run() -> Result<(), String> {
     let (device, queue) = adapter
         .request_device(&wgpu::DeviceDescriptor {
             label: Some("textra demo"),
-            // GPU timestamps for the on-screen timings, where the browser offers them.
-            required_features: adapter.features() & wgpu::Features::TIMESTAMP_QUERY,
+            required_features: wgpu::Features::empty(),
             required_limits: textra_gpu::required_limits().using_resolution(adapter.limits()),
             experimental_features: wgpu::ExperimentalFeatures::disabled(),
             memory_hints: wgpu::MemoryHints::MemoryUsage,
@@ -207,7 +206,20 @@ async fn run() -> Result<(), String> {
     };
     surface.configure(&device, &config);
     let mut scene = Scene::new(&device, view_format, "Inter", FONT.to_vec())?;
-    scene.enable_profiling(&device, &queue);
+    scene.add_color_font(
+        &device,
+        &queue,
+        "Noto color",
+        include_bytes!("../assets/Noto-COLRv1-Subset.ttf").to_vec(),
+        "🔥😀",
+    )?;
+    scene.add_color_font(
+        &device,
+        &queue,
+        "Twemoji color",
+        include_bytes!("../assets/Twemoji-Subset.ttf").to_vec(),
+        "🤖",
+    )?;
     let start = window.performance().map_or(0.0, |p| p.now());
     let state = Rc::new(RefCell::new(State {
         window: window.clone(),
@@ -243,6 +255,8 @@ async fn run() -> Result<(), String> {
 }
 
 fn frame(s: &mut State, now: f64) {
+    let performance = s.window.performance();
+    let cpu_start = performance.as_ref().map_or(0.0, web_sys::Performance::now);
     for c in COMMANDS.with(|q| std::mem::take(&mut *q.borrow_mut())) {
         match c {
             Command::Text(t) => s.scene.set_text(&t),
@@ -298,5 +312,9 @@ fn frame(s: &mut State, now: f64) {
     s.queue.present(tex);
     if suboptimal {
         s.surface.configure(&s.device, &s.config);
+    }
+    // CPU work through submission of the scene, not GPU execution or frame interval.
+    if let Some(performance) = performance {
+        s.scene.cpu_ms = performance.now() - cpu_start;
     }
 }

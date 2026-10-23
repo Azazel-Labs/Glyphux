@@ -42,7 +42,7 @@ it, so corners come out rounded. The **multi-channel** method stores three dista
 different subsets of the edges, in the red, green and blue channels. Drawing takes the
 middle value (the median) of the three, and that reconstructs sharp corners.
 
-Everything below is drawn from the generator's real output by
+The monochrome figures below are drawn from the generator's real output by
 [`examples/figures.rs`](examples/figures.rs) (`cargo run --release --bin figures`).
 
 ![The pipeline: shape text, look up glyphs, prepare missing glyphs on the CPU, generate them in one GPU batch, store them in the atlas, draw quads](docs/figures/pipeline.svg)
@@ -148,11 +148,13 @@ instanced quad per glyph samples the atlas, whether or not anything was generate
 
 ![A corner of a GPU atlas layer with glyphs at several sizes](docs/figures/atlas.png)
 
-Generated fields go into a texture array: four 1024 × 1024 layers by default, with the true
+Generated fields go into a texture array: 1024 × 1024 pages allocated on demand, capped
+at two by default (`AtlasConfig::layers`), with the true
 distance in the alpha channel (MTSDF). Each glyph is generated at a resolution chosen from
 the size it is drawn at: 32, 64 or 128 texels per em. Small text gets small fields, large
 text gets detail, and one glyph can be cached at several sizes. When the atlas is full, the
-least recently used layer is cleared and reused. Glyphs with a wide glow or shadow get a
+least recently used layer not needed in the current frame is cleared and reused. Growing
+the array preserves existing glyphs. Glyphs with a wide glow or shadow get a
 field with a wider distance range, so effects never clip.
 
 ### Shaping
@@ -303,6 +305,45 @@ cargo run --release --bin text_demo -- examples/web-demo/assets/Inter-Regular.ot
 ```
 
 ## Library
+
+### Color emoji
+
+COLRv0 solid layers and supported COLRv1 gradients can be compiled into local
+region-distance fields with analytic paint recipes. `textra::color::ColorField`
+provides CPU compilation and decoding; `textra_gpu::color::ColorRenderer` draws them
+with at most one filtered RGBA lookup per pixel. More than four local recipes is an
+explicit compilation error. See [color glyph support and examples](docs/color-glyphs.md)
+for supported paints, shaping, GPU integration and limits.
+
+![Actual Twemoji robot output, its local tile grid, and the packed RGB and individual distance channels](docs/figures/color-prepare.svg)
+
+The CPU compiles visible layer stacks into paint recipes and packs their boundaries
+into local distance tiles. Colors remain in paint data; the atlas channels store
+distances. The fourth local recipe can use residual weight, while alpha tracks the
+outer silhouette independently.
+
+![Actual GPU readback of three color glyphs sharing one atlas page, with a second page still unallocated](docs/figures/color-atlas.svg)
+
+`ColorRenderer` packs these glyph-local distance payloads into shared 1024 × 1024
+GPU pages. Pages are allocated as needed, capped at two by default. Tile origins are
+offset into the chosen page, with filtering gutters preserved. Paints and recipes
+remain in per-glyph buffers. Removing a glyph frees its rectangle; a full color atlas
+returns an error without evicting existing glyphs. The monochrome atlas is a separate
+pool with its own two-page default cap and eviction of pages unused in the current frame.
+
+![Fire, grinning face and robot decoded at three sizes, followed by the per-pixel rendering steps](docs/figures/color-render.svg)
+
+At draw time, the decoder evaluates each recipe's paints, blends recipes using local
+region weights, and applies outer coverage once. The examples above come from Textra's
+CPU reference renderer, using the same compiled fields consumed by the GPU renderer.
+Atlas images and tile counts are extracted directly from those fields.
+
+Regenerate the three color SVG figures with
+`cargo run --release --bin figures -- docs/figures --color`.
+The shared-page figure captures the GPU texture and requires an adapter.
+Their editable labels and layout live in [`examples/figures_color.rs`](examples/figures_color.rs).
+
+### Monochrome distance fields
 
 ```rust
 use textra::*;

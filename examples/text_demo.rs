@@ -65,6 +65,10 @@ fn main() {
             let data = std::fs::read(&p).unwrap();
             let added = if fallback.contains("Variable") {
                 scene.set_weight_font(data)
+            } else if fallback == "Noto-COLRv1-Subset" {
+                scene.add_color_font(&device, &queue, &fallback, data, "🔥😀")
+            } else if fallback == "Twemoji-Subset" {
+                scene.add_color_font(&device, &queue, &fallback, data, "🤖")
             } else {
                 scene.add_font(&fallback, data, 0)
             };
@@ -81,6 +85,7 @@ fn main() {
             "unavailable"
         }
     );
+    scene.show_atlas = std::env::var("SHOW_ATLAS").is_ok();
     for f in 0..frames {
         let t = f as f32 * std::f32::consts::PI / (0.8 * (frames.max(2) - 1) as f32);
         let start = std::time::Instant::now();

@@ -2,6 +2,72 @@
 use textra::Shape;
 use textra_gpu::{AtlasConfig, GlyphAtlas, GlyphKey, default_device, wgpu};
 
+#[test]
+fn pages_grow_preserve_pixels_and_respect_cap() {
+    let (_, device, queue) = match default_device() {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("skipping: {e}");
+            return;
+        }
+    };
+    let square = || Shape::from_description("{ 0,0; 0,1; 1,1; 1,0; # }").ok();
+    for cap in [1, 2] {
+        let config = AtlasConfig {
+            size: 64,
+            layers: cap,
+            min_level: 32,
+            max_level: 32,
+            detail_probe: false,
+            ..AtlasConfig::default()
+        };
+        let mut atlas = GlyphAtlas::new(&device, config.clone()).unwrap();
+        assert_eq!(atlas.page_count(), 0);
+        assert_eq!(atlas.allocated_page_count(), 0);
+        assert_eq!(atlas.texture().width(), 1);
+        let mut reference = GlyphAtlas::new(&device, config).unwrap();
+        let key = |glyph| GlyphKey { font: 0, glyph };
+        reference.get(key(0), 64.0, square).unwrap();
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+        reference.flush(&device, &mut encoder);
+        queue.submit([encoder.finish()]);
+        let expected = textra_gpu::read_texture_layer(&device, &queue, reference.texture(), 0);
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+        for i in 0..cap {
+            let placed = atlas.get(key(i), 64.0, square).unwrap();
+            assert_eq!(placed.layer, i);
+            assert_eq!(atlas.page_count(), i + 1);
+            // Growing after an earlier flush in this encoder must preserve that flush.
+            atlas.flush(&device, &mut encoder);
+            assert_eq!(atlas.allocated_page_count(), i + 1);
+        }
+        assert!(
+            atlas.get(key(cap), 64.0, square).is_none(),
+            "current-frame pages must not be evicted"
+        );
+        assert_eq!(atlas.page_count(), cap);
+        queue.submit([encoder.finish()]);
+        for page in 0..cap {
+            assert_eq!(
+                textra_gpu::read_texture_layer(&device, &queue, atlas.texture(), page),
+                expected
+            );
+        }
+        atlas.begin_frame();
+        if cap == 2 {
+            atlas.get(key(0), 64.0, square).unwrap();
+        }
+        let next = atlas.get(key(cap), 64.0, square).unwrap();
+        assert_eq!(next.layer, cap - 1);
+        assert_eq!(atlas.stats().evicted_layers, 1);
+        assert_eq!(atlas.page_count(), cap);
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+        atlas.flush(&device, &mut encoder);
+        queue.submit([encoder.finish()]);
+        assert_eq!(atlas.texture().depth_or_array_layers(), cap);
+    }
+}
+
 /// Effects must never be clipped by the field's range: at every size, the glyph returned for a
 /// reach covers it on screen (half its range, in screen pixels), so a glow keeps its size as
 /// text zooms across levels.

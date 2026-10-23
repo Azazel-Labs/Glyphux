@@ -122,7 +122,25 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
     let radius = min(in.params.z, 0.5 * screen_range - 0.5);
     if (radius > 0.0 && in.glow.a > 0.0) {
         let falloff = clamp(1.0 + sd_outside / radius, 0.0, 1.0);
-        let ga = in.glow.a * falloff * falloff * (1.0 - alpha);
+        var glow_value = falloff * falloff;
+        // Widen the filter outside the shape without changing the sharp fill. Filter
+        // glow opacity, not signed distance. Four extra samples share the center weight.
+        let spread = min(radius * 0.2, max(-sd_outside, 0.0) * 0.35);
+        if (spread > 0.0) {
+            var total = 0.0;
+            for (var i = 0u; i < 4u; i++) {
+                let offset = vec2<f32>(select(-1.0, 1.0, (i & 1u) != 0u), select(-1.0, 1.0, (i & 2u) != 0u));
+                let uv = clamp(in.uv + (duv_dx * offset.x + duv_dy * offset.y) * spread,
+                    min(in.uv_rect.xy, in.uv_rect.zw), max(in.uv_rect.xy, in.uv_rect.zw));
+                let v = textureSampleLevel(atlas, atlas_sampler, uv, in.layer, 0.0);
+                let d = (select(median3(v.r, v.g, v.b), v.a, globals.has_true_distance > 0.5) - 0.5) * screen_range + weight;
+                let f = clamp(1.0 + d / radius, 0.0, 1.0);
+                total += f * f;
+            }
+            // Keep the original support so filtering cannot expose the glyph quad.
+            glow_value = mix(glow_value, total * 0.25, 0.8) * smoothstep(0.0, 0.15, falloff);
+        }
+        let ga = in.glow.a * glow_value * (1.0 - alpha);
         rgb = (rgb * alpha + in.glow.rgb * ga) / max(alpha + ga, 1e-6);
         alpha = alpha + ga;
     }

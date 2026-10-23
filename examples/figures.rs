@@ -21,9 +21,16 @@ const INK: &str = "#24292f";
 const MUTED: &str = "#6e7781";
 const GRID: &str = "#e4e7eb";
 
+#[path = "figures_color.rs"]
+mod color;
+
 fn main() {
     let out = std::env::args().nth(1).unwrap_or_else(|| "docs/figures".into());
     std::fs::create_dir_all(&out).unwrap();
+    if std::env::args().any(|a| a == "--color") {
+        color::write(&out);
+        return;
+    }
     let inter = std::fs::read(format!("{ASSETS}/Inter-Regular.otf")).unwrap();
     let font = Font::from_bytes(&inter, 0, FontScaling::EmNormalized).unwrap();
 
@@ -340,8 +347,8 @@ fn pipeline() -> String {
     let lanes = [
         (
             30.0,
-            "Every frame, for all text",
-            "CPU (shaping, layout) and one draw call",
+            "Every frame, monochrome text",
+            "CPU shaping and layout; instanced draws",
             "#eef6ff",
             "#9cc3f5",
         ),
@@ -383,7 +390,7 @@ fn pipeline() -> String {
         (1, 3.0, &["", ""]),
         (2, 0.0, &["6  Distance pass", "nearest edge per channel"]),
         (2, 1.0, &["7  Error correction", "4 passes, msdfgen's rules"]),
-        (2, 2.0, &["8  Store in atlas", "texture array, LRU layers"]),
+        (2, 2.0, &["8  Store in atlas", "on-demand pages, LRU at cap"]),
         (2, 3.0, &["", ""]),
     ];
     for &(lane, c, lines) in &boxes {
@@ -403,7 +410,7 @@ fn pipeline() -> String {
         bh,
         "#fff7e6",
         "#f0b45a",
-        &["Glyph atlas", "4 × 1024² MTSDF layers"],
+        &["Glyph atlas", "up to 2 × 1024² pages"],
     );
     let mid = |l: usize| row(l) + bh / 2.0;
     for (l, a, b) in [

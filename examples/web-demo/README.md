@@ -2,8 +2,14 @@
 
 Live: https://azazel-labs.github.io/Textra/ (deployed by CI from main).
 
-The `textra_gpu::demo::Scene` in a browser canvas on WebGPU. Every glyph's field is generated
-on the GPU the first time it is needed at a size level; nothing is pre-baked.
+The `textra_gpu::demo::Scene` in a browser canvas on WebGPU. Monochrome glyph fields are
+generated on the GPU the first time they are needed at a size level. Color emoji rendering
+compiles its bundled COLR outlines once at startup, then evaluates cached region-distance
+fields and analytic paints on the GPU.
+
+The timing readout uses the browser's CPU clock (`performance.now()`) around frame
+preparation and submission for the scene. It does not measure GPU execution time
+or the interval between animation frames. The web demo does not request GPU timestamps.
 
 * A title whose letters bounce and wobble one by one under a pulsing glow, its "-gpu"
   breathing from Thin to Black through Inter's variable font (instances at nine weights, the
@@ -17,6 +23,14 @@ on the GPU the first time it is needed at a size level; nothing is pre-baked.
   glowing.
 * The atlas pages themselves, live, as raw MSDF fields: watch them fill up as new text and
   sizes appear (toggle in the panel).
+* Noto's gradient fire and grinning face, plus Twemoji's ten-color robot, bounce in
+  the title and flow along the editable text spline. They use the same layout and
+  animation transforms as text, with their own color rendering pipeline.
+* The atlas toggle shows the monochrome pages and shared color atlas pages. Both pools
+  allocate pages as needed, each with a default cap of two 1024 by 1024 pages.
+  Color thumbnails show packed RGB region distances, not finished emoji colors.
+* Glows use four extra samples with a filter that widens outside the glyph. The letter
+  fill remains sharp; this is a visual experiment, not a measured speed improvement.
 
 Wide glows and long shadows get their glyphs generated with a wider distance range
 (`GlyphAtlas::get_with_reach`), so they never clip. Each line is split into runs by font:
@@ -54,4 +68,5 @@ cannot run the generator (no compute shaders).
 * `src/lib.rs`: canvas, adapter/device, surface (sRGB view), `requestAnimationFrame` loop.
 * `index.html`: keeps the canvas at CSS size × `devicePixelRatio`, loads `pkg/`.
 * `assets/`: the fonts, Inter (embedded in the wasm), its variable version and the Noto Sans
-  fallbacks (loaded by `index.html`), all under the SIL OFL; see `assets/README.md`.
+  fallbacks (loaded by `index.html`), plus embedded color-emoji subsets; see
+  `assets/README.md` for their licenses.

@@ -1,5 +1,13 @@
 Fonts for the demos, all under licenses that allow redistribution:
 
+* `Noto-COLRv1-Subset.ttf`: Noto Color Emoji v2.047, SIL Open Font License 1.1
+  (`NotoColorEmoji-OFL.txt`). Embedded for the color panel's fire and grinning face.
+* `Twemoji-Subset.ttf`: Twemoji Mozilla robot. Font code by Mozilla, Apache 2.0;
+  artwork by the Twemoji project, CC BY 4.0 (`Twemoji-LICENSE.md`). Embedded for the
+  ten-color robot. Both color fonts are subsets from the prototype bundle used by
+  Textra's tests; see `../../../crates/textra/tests/assets/README.md` for provenance
+  and reproduction. The artwork is unchanged.
+
 * `Inter-Regular.otf`: [Inter](https://github.com/rsms/inter) 4.1, SIL Open Font License 1.1
   (`Inter-OFL.txt`). Embedded by the web demo; also the default font of the VS Code tasks and
   launch configurations. `InterVariable-Latin.ttf` is Inter's variable font (weight and

@@ -88,6 +88,22 @@ impl ShapingFont {
         Some(g.shape)
     }
 
+    /// COLR artwork for a shaped glyph ID, including variation selectors and ligatures
+    /// already resolved by the shaper. Bitmap-only and SVG glyphs return an error.
+    pub fn color_glyph(
+        &self,
+        glyph: u32,
+        palette: u16,
+        foreground: [u8; 4],
+    ) -> Result<textra::color::ColorGlyph, textra::color::ColorError> {
+        let font = self.outlines().ok_or(textra::color::ColorError::Invalid("font face"))?;
+        font.color_glyph_by_index(
+            u16::try_from(glyph).map_err(|_| textra::color::ColorError::Invalid("glyph index"))?,
+            palette,
+            foreground,
+        )
+    }
+
     /// Whether the font maps `c` to a glyph (for choosing a fallback font per line), through
     /// the shaper's own (cached) character map.
     pub fn has_glyph(&self, c: char) -> bool {

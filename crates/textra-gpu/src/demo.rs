@@ -4,9 +4,11 @@
 //! through the atlas levels. Text is split into runs by font: the primary font where it has
 //! the characters, the first fallback that does elsewhere.
 
+use crate::color::{ColorGlyphInstance, ColorRenderer};
 use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::sync::Arc;
+use textra::color::{ColorField, ColorFieldConfig};
 
 use crate::atlas::{AtlasConfig, GlyphAtlas, GlyphKey};
 use crate::shaping::{ShapedLine, Shaper, ShapingFont};
@@ -43,7 +45,7 @@ const ZOOM: &[&str] = &[
 /// The big glyph, a few seconds each: corners, strokes and dense CJK detail.
 const BIG: &[&str] = &["&", "永", "鬱", "龍", "한", "ß", "ॐ", "ع"];
 const RING: &str = "signed distance fields · generated on the GPU · ";
-const DEFAULT_TEXT: &str = "Hello, 世界! Type something · 日本語 · 한국어 · العربية";
+const DEFAULT_TEXT: &str = "Hello, 世界! 🔥 😀 🤖 Type something · 日本語 · 한국어 · العربية";
 
 pub const BACKGROUND: [u8; 3] = [0x14, 0x16, 0x1c];
 
@@ -120,6 +122,7 @@ impl Path {
 struct NamedFont {
     name: String,
     font: ShapingFont,
+    color_characters: String,
     /// Takes part in per-character fallback (not the variable-weight instances).
     fallback: bool,
 }
@@ -201,6 +204,9 @@ struct Ctx<'a> {
     atlas: &'a mut GlyphAtlas,
     out: &'a mut Vec<GlyphInstance>,
     units: Units,
+    color_fields: &'a HashMap<GlyphKey, ColorField>,
+    color_out: &'a mut Vec<ColorGlyphInstance>,
+    order: &'a mut Vec<(u8, u32)>,
 }
 
 impl Ctx<'_> {
@@ -212,7 +218,10 @@ impl Ctx<'_> {
         let mut runs: Vec<(usize, std::ops::Range<usize>)> = Vec::new();
         for (i, c) in text.char_indices() {
             let current = runs.last().map(|r| r.0);
-            let f = if c.is_alphanumeric() && has(self.primary, c) {
+            let color_font = (0..self.fonts.len()).find(|&f| self.fonts[f].color_characters.contains(c));
+            let f = if let Some(f) = color_font {
+                f
+            } else if c.is_alphanumeric() && has(self.primary, c) {
                 self.primary
             } else if let Some(f) = current.filter(|&f| c.is_whitespace() || has(f, c)) {
                 f
@@ -259,6 +268,19 @@ impl Ctx<'_> {
     fn glyph(&mut self, f: usize, glyph: u32, origin: [f32; 2], rs: &ResolvedStyle, rotation: Option<(f32, [f32; 2])>) {
         let font = &self.fonts[f].font;
         let key = GlyphKey { font: font.id, glyph };
+        if let Some(field) = self.color_fields.get(&key) {
+            let mut inst = ColorGlyphInstance::new(key, field, self.units.to_physical(origin), rs.px_per_em);
+            if inst.rect[2] - inst.rect[0] < field.config().min_pixels as f32 {
+                return;
+            }
+            inst.opacity = rs.color[3];
+            if let Some((angle, pivot)) = rotation {
+                inst = inst.with_rotation(angle, self.units.to_physical(pivot));
+            }
+            self.order.push((1, self.color_out.len() as u32));
+            self.color_out.push(inst);
+            return;
+        }
         let (size, reach) = (f64::from(rs.px_per_em), f64::from(rs.reach()));
         let Some(g) = self.atlas.get_with_reach(key, size, reach, || font.outline(glyph)) else {
             return;
@@ -270,6 +292,7 @@ impl Ctx<'_> {
         if let Some((angle, pivot)) = rotation {
             inst = inst.with_rotation(angle, self.units.to_physical(pivot));
         }
+        self.order.push((0, self.out.len() as u32));
         self.out.push(inst);
     }
 
@@ -366,6 +389,10 @@ pub struct Scene {
     pub atlas: GlyphAtlas,
     renderer: TextRenderer,
     instances: Vec<GlyphInstance>,
+    color_renderer: ColorRenderer,
+    color_fields: HashMap<GlyphKey, ColorField>,
+    color_instances: Vec<ColorGlyphInstance>,
+    draw_order: Vec<(u8, u32)>,
     text: String,
     /// Glyphs generated in the last frame.
     pub last_generated: usize,
@@ -373,7 +400,8 @@ pub struct Scene {
     /// Latest GPU pass durations (ms) by label, and those of the latest frame that generated.
     pub gpu_times: Vec<(&'static str, f64)>,
     pub gpu_generation: Vec<(&'static str, f64)>,
-    /// CPU time of the last frame's layout + atlas work (ms; native only).
+    /// CPU time in milliseconds: native layout + atlas work, or supplied by the web host
+    /// for its complete frame preparation and submission.
     pub cpu_ms: f64,
     /// Instances of the variable font at [`WEIGHTS`] (indices into `fonts`).
     weights: Vec<usize>,
@@ -398,13 +426,9 @@ struct Scratch {
 const WEIGHTS: [f32; 9] = [100.0, 200.0, 300.0, 400.0, 500.0, 600.0, 700.0, 800.0, 900.0];
 
 impl Scene {
-    /// The scene's default atlas: MTSDF (glows and outlines use the true distance), more layers
-    /// than the default for CJK text at many sizes.
+    /// MTSDF with on-demand pages, capped at two, including for mixed-script text.
     pub fn default_config() -> AtlasConfig {
-        AtlasConfig {
-            layers: 8,
-            ..AtlasConfig::default()
-        }
+        AtlasConfig::default()
     }
 
     /// A scene whose text is set in `font_data` (named `name`), with fallbacks added by
@@ -433,6 +457,10 @@ impl Scene {
             atlas: GlyphAtlas::new(device, config).map_err(|e| e.to_string())?,
             renderer: TextRenderer::new(device, target),
             instances: Vec::new(),
+            color_renderer: ColorRenderer::new(device, target),
+            color_fields: HashMap::new(),
+            color_instances: Vec::new(),
+            draw_order: Vec::new(),
             text: DEFAULT_TEXT.to_owned(),
             last_generated: 0,
             profiler: None,
@@ -462,12 +490,54 @@ impl Scene {
         let named = NamedFont {
             name: name.to_owned(),
             font,
+            color_characters: String::new(),
             fallback: true,
         };
         if slot == self.fonts.len() {
             self.fonts.push(named);
         } else {
             self.fonts[slot] = named;
+        }
+        self.cache.clear();
+        Ok(())
+    }
+
+    /// Register a color font and compile the selected demo glyphs before animation starts.
+    pub fn add_color_font(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        name: &str,
+        data: Vec<u8>,
+        characters: &str,
+    ) -> Result<(), String> {
+        self.add_font(name, data, 0)?;
+        let named = self.fonts.iter_mut().find(|f| f.name == name).unwrap();
+        characters.clone_into(&mut named.color_characters);
+        let font = &named.font;
+        for c in characters.chars() {
+            let line = self.shaper.shape_line(font, &c.to_string());
+            for glyph in line.glyphs {
+                let key = GlyphKey {
+                    font: font.id,
+                    glyph: glyph.glyph,
+                };
+                let artwork = font
+                    .color_glyph(key.glyph, 0, [0, 0, 0, 255])
+                    .map_err(|e| e.to_string())?;
+                let field = ColorField::build(
+                    &artwork,
+                    ColorFieldConfig {
+                        resolution: 512,
+                        ..ColorFieldConfig::default()
+                    },
+                )
+                .map_err(|e| e.to_string())?;
+                self.color_renderer
+                    .upload(device, queue, key, &field)
+                    .map_err(|e| e.to_string())?;
+                self.color_fields.insert(key, field);
+            }
         }
         self.cache.clear();
         Ok(())
@@ -485,6 +555,7 @@ impl Scene {
             let named = NamedFont {
                 name: format!("weight {wght}"),
                 font,
+                color_characters: String::new(),
                 fallback: false,
             };
             if let Some(&slot) = self.weights.get(k) {
@@ -539,23 +610,26 @@ impl Scene {
             let _ = lines[n].write_fmt(args);
             n += 1;
         };
-        let get = |v: &[(&str, f64)], k: &str| v.iter().find(|(l, _)| *l == k).map(|(_, t)| *t);
-        if self.profiler.is_some() {
-            if let Some(t) = get(&self.gpu_times, "textra text") {
-                line(format_args!("GPU text draw {t:.3} ms"));
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let get = |v: &[(&str, f64)], k: &str| v.iter().find(|(l, _)| *l == k).map(|(_, t)| *t);
+            if self.profiler.is_some() {
+                if let Some(t) = get(&self.gpu_times, "textra text") {
+                    line(format_args!("GPU text draw {t:.3} ms"));
+                }
+                let g = &self.gpu_generation;
+                if !g.is_empty() {
+                    let total: f64 = g.iter().map(|(_, t)| t).sum();
+                    line(format_args!(
+                        "last generation {total:.3} ms (distance {:.3}, correction {:.3}, store {:.3})",
+                        get(g, "textra distance").unwrap_or(0.0),
+                        get(g, "textra correction").unwrap_or(0.0),
+                        get(g, "textra store").unwrap_or(0.0)
+                    ));
+                }
+            } else {
+                line(format_args!("no GPU timestamps on this device"));
             }
-            let g = &self.gpu_generation;
-            if !g.is_empty() {
-                let total: f64 = g.iter().map(|(_, t)| t).sum();
-                line(format_args!(
-                    "last generation {total:.3} ms (distance {:.3}, correction {:.3}, store {:.3})",
-                    get(g, "textra distance").unwrap_or(0.0),
-                    get(g, "textra correction").unwrap_or(0.0),
-                    get(g, "textra store").unwrap_or(0.0)
-                ));
-            }
-        } else {
-            line(format_args!("no GPU timestamps on this device"));
         }
         let st = self.atlas.stats();
         #[cfg(not(target_arch = "wasm32"))]
@@ -565,8 +639,8 @@ impl Scene {
         ));
         #[cfg(target_arch = "wasm32")]
         line(format_args!(
-            "{} glyphs generated, {} raised by the detail probe",
-            st.generated, st.probe_upgrades
+            "CPU frame submission {:.2} ms  ·  {} glyphs generated, {} raised by the detail probe",
+            self.cpu_ms, st.generated, st.probe_upgrades
         ));
         line(format_args!("font: {}", self.fonts[self.primary].name));
         lines.truncate(n);
@@ -576,6 +650,8 @@ impl Scene {
     #[allow(clippy::too_many_lines)]
     fn layout(&mut self, size: [f32; 2], t: f32) {
         self.instances.clear();
+        self.color_instances.clear();
+        self.draw_order.clear();
         let mut scratch = std::mem::take(&mut self.scratch);
         self.stats_lines(&mut scratch.stats);
         let weights = &self.weights;
@@ -584,21 +660,36 @@ impl Scene {
         let (w, full_h) = (size[0] / units.scale, size[1] / units.scale);
         let margin = (w * 0.04).max(12.0);
         // Atlas pages along the bottom (drawn first, under everything), live as they fill up.
-        let layers = self.atlas.config().layers;
+        let layers = self.atlas.page_count();
+        let max_layers = self.atlas.config().layers;
         let mut strip = 0.0;
         let mut strip_label = None;
         if self.show_atlas {
             let gap = (w * 0.006).max(4.0);
-            let th = ((w * 0.55 - margin) / layers as f32 - gap).min(full_h * 0.11).max(16.0);
+            let th = ((w * 0.55 - margin) / max_layers as f32 - gap)
+                .min(full_h * 0.11)
+                .max(16.0);
             let y = full_h - margin - th;
             for l in 0..layers {
                 let x = margin + l as f32 * (th + gap);
                 let rect = [x, y, x + th, y + th].map(|v| v * units.scale);
+                self.draw_order.push((0, self.instances.len() as u32));
                 self.instances.push(GlyphInstance::atlas_page(rect, l));
             }
             let label_px = (11.0 * (full_h / 720.0).clamp(0.6, 2.0)).max(10.0);
             strip_label = Some((label_px, [margin, y - label_px * 0.6]));
             strip = th + label_px * 2.2;
+            let keys = self.color_renderer.page_keys();
+            for (i, key) in keys.into_iter().enumerate() {
+                let x = w * 0.58 + i as f32 * (th + gap);
+                self.draw_order.push((2, self.color_instances.len() as u32));
+                self.color_instances.push(ColorGlyphInstance {
+                    key,
+                    rect: [x, y, x + th, y + th].map(|v| v * units.scale),
+                    transform: [1.0, 0.0, 0.0, 0.0],
+                    opacity: 1.0,
+                });
+            }
         }
         let mut cx = Ctx {
             fonts: &self.fonts,
@@ -607,6 +698,9 @@ impl Scene {
             shaper: &mut self.shaper,
             atlas: &mut self.atlas,
             out: &mut self.instances,
+            color_fields: &self.color_fields,
+            color_out: &mut self.color_instances,
+            order: &mut self.draw_order,
             units,
         };
         let fg = srgb(0xe8, 0xe6, 0xe3, 1.0);
@@ -622,10 +716,11 @@ impl Scene {
             label.clear();
             let _ = write!(
                 label,
-                "atlas: {layers} pages of {0}×{0} texels, generated as text needs them",
+                "atlas: {layers}/{max_layers} pages of {0}×{0} texels, allocated on demand",
                 cx.atlas.config().size
             );
             cx.line(label, at, &text(size, dim));
+            cx.line("Color: shared packed RGB pages", [w * 0.58, at[1]], &text(size, dim));
         }
 
         // Title: "textra" bouncing letter by letter, wobbling, glowing with a slow pulse;
@@ -633,7 +728,11 @@ impl Scene {
         let title = (h * 0.11).min(w * 0.09);
         let pulse = 0.5 + 0.5 * (t * 2.2).sin();
         let glow = text(title, accent).glow(srgb(0xff, 0x6a, 0x1a, 0.35 + 0.35 * pulse), em(0.08 + 0.1 * pulse));
-        let shaped = cx.shape("textra");
+        let shaped = cx.shape(if cx.color_fields.is_empty() {
+            "textra"
+        } else {
+            "textra 🔥😀🤖"
+        });
         let pen = cx.place_each(&shaped, [margin, margin + title * 0.8], &glow, |i| {
             let hop = (t * 3.2 - i as f32 * 0.55).sin().abs();
             let wobble = 0.09 * (t * 2.3 + i as f32 * 1.3).sin();
@@ -819,6 +918,9 @@ impl Scene {
         let text_scope = self.profiler.as_mut().and_then(|p| p.scope("textra text"));
         self.renderer
             .prepare(device, queue, &self.atlas, sizef, &self.instances);
+        self.color_renderer
+            .prepare(device, queue, sizef, &self.color_instances)
+            .expect("valid scene color instances");
         {
             let bg = srgb(BACKGROUND[0], BACKGROUND[1], BACKGROUND[2], 1.0);
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -842,7 +944,21 @@ impl Scene {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            self.renderer.render(&mut pass);
+            let mut at = 0;
+            while at < self.draw_order.len() {
+                let (kind, first) = self.draw_order[at];
+                let mut end = at + 1;
+                while end < self.draw_order.len() && self.draw_order[end] == (kind, first + (end - at) as u32) {
+                    end += 1;
+                }
+                let range = first..first + (end - at) as u32;
+                if kind == 0 {
+                    self.renderer.render_range(&mut pass, range);
+                } else {
+                    self.color_renderer.render_range(&mut pass, range, kind == 2);
+                }
+                at = end;
+            }
         }
         let readback = self.profiler.as_mut().and_then(|p| p.resolve(device, &mut encoder));
         queue.submit([encoder.finish()]);

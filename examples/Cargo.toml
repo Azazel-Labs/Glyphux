@@ -17,6 +17,11 @@ path = "glyph.rs"
 doc = false
 
 [[bin]]
+name = "color_glyph"
+path = "color_glyph.rs"
+doc = false
+
+[[bin]]
 name = "text_demo"
 path = "text_demo.rs"
 doc = false

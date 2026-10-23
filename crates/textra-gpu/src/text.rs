@@ -298,6 +298,12 @@ impl TextRenderer {
 
     /// Draws the prepared glyphs.
     pub fn render(&self, pass: &mut wgpu::RenderPass<'_>) {
+        self.render_range(pass, 0..self.count);
+    }
+
+    /// Draws an ordered range of prepared instances.
+    pub fn render_range(&self, pass: &mut wgpu::RenderPass<'_>, range: std::ops::Range<u32>) {
+        assert!(range.end <= self.count);
         let (Some((_, bg)), Some(inst)) = (&self.bind_group, &self.instances) else {
             return;
         };
@@ -307,7 +313,7 @@ impl TextRenderer {
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, bg, &[]);
         pass.set_vertex_buffer(0, inst.slice(..));
-        pass.draw(0..4, 0..self.count);
+        pass.draw(0..4, range);
     }
 }
 

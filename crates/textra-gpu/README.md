@@ -55,6 +55,71 @@ Compared to the projects reviewed for the design:
   tiles only get a sign.
 * Unlike both, the result matches the CPU generator, error correction included.
 
+## Color fonts and shared atlas pages
+
+Color fonts use `textra::color::ColorField` and `textra_gpu::color::ColorRenderer`.
+The CPU imports supported COLR layers, compiles visible paint stacks into recipes,
+and builds local region-distance tiles. The GPU reconstructs their colors while
+drawing. This is a separate decoding path from the monochrome MSDF compute pipeline above.
+
+![Compile a color glyph into local distance patches and paint recipes](../../docs/figures/color-prepare.svg)
+
+The small packed image in that figure is a **glyph-local upload payload**, not a
+dedicated GPU texture. `ColorRenderer::upload` reserves a rectangle in an existing
+shared page, copies the payload there, and offsets its tile origins to that rectangle.
+The compiler's patch gutters travel with it, keeping filtered reads within the correct
+local channel mapping. RGB holds three explicit recipe distances, alpha holds the
+outer union distance, and an optional fourth recipe uses residual weight.
+
+![GPU readback of fire, grinning face and robot sharing one color atlas page](../../docs/figures/color-atlas.svg)
+
+Both atlas pools allocate pages on demand, with independent caps:
+
+| | Monochrome `GlyphAtlas` | Color `ColorRenderer` |
+|---|---|---|
+| Default limit | Two 1024 × 1024 pages | Two 1024 × 1024 pages |
+| Configuration | `AtlasConfig::size`, `layers` | `ColorAtlasConfig::page_size`, `max_pages` |
+| Allocation | `flush` grows a texture array and copies existing pages | `upload` creates another fixed-size page only when existing pages cannot fit |
+| At the cap | Recycle the least recently used page unused this frame; otherwise placement may fail | Return an error; preserve resident glyphs and any previous upload under the same key |
+| Reclamation | Whole-page recycling | `remove` frees a rectangle and merges adjacent free space; `clear` releases all pages |
+
+Color allocation does not automatically compact or evict. An upload must fit on one
+page; fragmented free space can also prevent placement. Empty allocated color pages
+are retained until `clear`. `page_count()`, `page_texture()` and `glyph_page(key)` expose
+the actual shared storage for diagnostics. The demo's atlas toggle displays occupied
+color pages once each, alongside the live monochrome pages.
+
+```rust
+use textra_gpu::color::{ColorAtlasConfig, ColorRenderer};
+
+let mut colors = ColorRenderer::with_config(&device, surface_format, ColorAtlasConfig {
+    page_size: 1024,
+    max_pages: 2, // set to 1 for a single-page cap
+})?;
+colors.upload(&device, &queue, key, &compiled_field)?;
+// Each frame: prepare placements, then render ordered runs in your render pass.
+```
+
+![Decode local distances, evaluate paints and apply coverage](../../docs/figures/color-render.svg)
+
+The shader finds the glyph-local tile from its quad coordinates. Empty tiles return
+transparent; interior tiles evaluate one recipe without sampling the atlas. Boundary
+tiles fetch one bilinear RGBA value from the shared page, form normalized recipe weights,
+evaluate solid or supported gradient paints, and apply outer coverage once. The result
+uses premultiplied source-over blending. Paint and recipe buffers add work beyond that
+one filtered lookup.
+
+Color and monochrome instances share the scene's placement and animation transforms.
+Submit ordered runs through `TextRenderer::render_range` and
+`ColorRenderer::render_range` to preserve overlap order. Shared color texture storage
+does not yet imply batched draws: each color glyph still has its own paint buffers and
+bind group, with one draw per instance. Monochrome glow, weight and outline effects
+do not apply to the color pipeline. See [color font support and limits](../../docs/color-glyphs.md).
+
+The color figures are generated from real fields and GPU readback by
+[`examples/figures_color.rs`](../../examples/figures_color.rs). Regenerate them with
+`cargo run --release --bin figures -- docs/figures --color` (GPU required).
+
 ## Usage
 
 ### Glyph atlas + text renderer
@@ -67,7 +132,7 @@ use textra_gpu::units::{em, px};
 
 let font = ShapingFont::new(0, Arc::new(std::fs::read("Font.otf")?), 0).unwrap();
 let mut shaper = Shaper::new();
-let mut atlas = GlyphAtlas::new(&device, AtlasConfig::default())?; // 4 × 1024² MTSDF, rgba8
+let mut atlas = GlyphAtlas::new(&device, AtlasConfig::default())?; // on-demand 1024² MTSDF pages, max 2
 let mut text = TextRenderer::new(&device, surface_format);
 let units = Units::new(device_pixel_ratio);   // layout in logical (CSS) pixels
 let style = TextStyle::new(px(48.0), [1.0; 4]).glow([1.0, 0.5, 0.2, 0.6], em(0.15));
@@ -106,7 +171,12 @@ queue.submit([encoder.finish()]);
   `probes_per_flush` at a time on `wasm32`. A glyph is generated at its size level right
   away and regenerated once if its probe asks for more (6 of 154 glyphs in the shaping demo,
   none in Inter's ASCII). Off with `detail_probe: false`.
-* **Cache.** Shelf packing per layer of a texture array; when full, the least recently used
+* **Cache.** Shelf packing per layer of a texture array. `AtlasConfig::layers` is the page
+  cap (two by default), not an upfront allocation. `flush` grows the array as needed and
+  copies existing pages before writing new glyphs. Acquire custom views and bind groups
+  after flushing; `TextRenderer::prepare` automatically rebinds a grown atlas. Before the
+  first generated glyph there is only a 1 by 1 placeholder. `page_count()` includes queued
+  placements; `allocated_page_count()` reports full GPU pages. At the cap, the least recently used
   layer not used in the current frame is recycled. `texel_budget` caps the generation per
   flush (requests over it reuse another cached level of the glyph and are generated later).
 * **Placement.** `AtlasGlyph` has the quad in em units (`plane_min/max`, y up) and texture

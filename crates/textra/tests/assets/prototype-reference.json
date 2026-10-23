@@ -1,0 +1,12 @@
+{
+  "fire": {
+    "packet_sha256": "cbfac0b9b50b321ab676ba4d89bd1af5af9f446a41ed3432747d0c28d6766139",
+    "rgba32f_sha256": "6b8803a48b29fd0a11ca1c0acbf394d2ba27149a9a944a4f37a92367ea392349",
+    "filtered_samples": 752
+  },
+  "grinning": {
+    "packet_sha256": "98e77f772ecbe56719dd5cfee19f5abd7ed7a2c153427c09cd279d0e3040513d",
+    "rgba32f_sha256": "8cb80aba8a06ff5d1bc1c31b939608f2d57268dd4b4957bedf3e85748b7852d0",
+    "filtered_samples": 760
+  }
+}

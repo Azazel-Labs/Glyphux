@@ -28,6 +28,7 @@
 
 pub mod batch;
 pub mod bitmap;
+pub mod color;
 pub mod coloring;
 pub mod correction;
 pub mod edge;

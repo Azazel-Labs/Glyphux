@@ -5,6 +5,7 @@
 //! selection rules as the CPU generator.
 
 pub mod atlas;
+pub mod color;
 #[cfg(feature = "demo")]
 pub mod demo;
 pub mod field;
@@ -115,5 +116,10 @@ mod shader_validation {
     #[test]
     fn text() {
         validate("text", crate::text::TEXT_SHADER);
+    }
+
+    #[test]
+    fn color() {
+        validate("color", crate::color::COLOR_SHADER);
     }
 }
