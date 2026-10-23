@@ -27,12 +27,29 @@ grown into a text rendering system with GPU generation, worker threads and color
 The generator supports true SDF, pseudo-SDF, **multi-channel SDF (MSDF)** and
 **MSDF with the true SDF in alpha (MTSDF)**, for both font glyphs and vector shapes.
 
-| Crate | What it is |
-|---|---|
-| [`glyphux`](crates/glyphux) | The library: shapes, edge coloring, SDF/PSDF/MSDF/MTSDF generation, error correction, font/SVG/shape-description input, PNG & co. output. No required dependencies (`ttf-parser` for fonts and `bytemuck` for the `gpu` feature, both optional). No `unsafe`. |
-| [`glyphux-atlas`](crates/glyphux-atlas) | Font atlases on top of `glyphux`, in the role of [msdf-atlas-gen](https://github.com/Chlumsky/msdf-atlas-gen): charsets, glyph boxes, packing, parallel generation, JSON/CSV layouts in msdf-atlas-gen's format. Depends only on `glyphux`. |
-| [`glyphux-cli`](crates/glyphux-cli) | The `glyphux` and `glyphux-atlas` command line tools ([clap](https://crates.io/crates/clap)); also accept msdfgen / msdf-atlas-gen's single-dash options. |
-| [`glyphux-gpu`](crates/glyphux-gpu) | The same fields generated on the GPU with wgpu 30 compute shaders (native and WebGPU), a glyph atlas that picks each glyph's field resolution from the size it is drawn at, text shaping, and an MSDF text renderer. The only crate that depends on wgpu. |
+<table>
+  <thead>
+    <tr><th width="180">Crate</th><th>What it is</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><a href="crates/glyphux"><code>glyphux</code></a></td>
+      <td>The library: shapes, edge coloring, SDF/PSDF/MSDF/MTSDF generation, error correction, font/SVG/shape-description input, PNG &amp; co. output. No required dependencies (<code>ttf-parser</code> for fonts and <code>bytemuck</code> for the <code>gpu</code> feature, both optional). No <code>unsafe</code>.</td>
+    </tr>
+    <tr>
+      <td><a href="crates/glyphux-atlas"><code>glyphux-atlas</code></a></td>
+      <td>Font atlases on top of <code>glyphux</code>, in the role of <a href="https://github.com/Chlumsky/msdf-atlas-gen">msdf-atlas-gen</a>: charsets, glyph boxes, packing, parallel generation, JSON/CSV layouts in msdf-atlas-gen's format. Depends only on <code>glyphux</code>.</td>
+    </tr>
+    <tr>
+      <td><a href="crates/glyphux-cli"><code>glyphux-cli</code></a></td>
+      <td>The <code>glyphux</code> and <code>glyphux-atlas</code> command line tools (<a href="https://crates.io/crates/clap">clap</a>); also accept msdfgen / msdf-atlas-gen's single-dash options.</td>
+    </tr>
+    <tr>
+      <td><a href="crates/glyphux-gpu"><code>glyphux-gpu</code></a></td>
+      <td>The same fields generated on the GPU with wgpu 30 compute shaders (native and WebGPU), a glyph atlas that picks each glyph's field resolution from the size it is drawn at, text shaping, and an MSDF text renderer. The only crate that depends on wgpu.</td>
+    </tr>
+  </tbody>
+</table>
 
 ```
 cargo install --path crates/glyphux-cli
