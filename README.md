@@ -520,3 +520,5 @@ Differences from msdfgen's defaults: ink-trap coloring, contour reorientation (`
 to disable) and the "auto" error correction mode even with the scanline pass (msdfgen falls
 back to "auto-fast"); the scanline pass downgrades to "auto-fast" only if it actually had to
 flip signs.
+
+Release maintainers: see the [release workflow guide](docs/releasing.md) for version tags, crates.io publishing and CLI archives.

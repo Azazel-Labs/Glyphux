@@ -1,15 +1,14 @@
 # Formatting, lints and tests for the workspace, a fully optimized build of the web demo, and,
-# on pushes to main once both pass, its deployment to GitHub Pages. Published GitHub
-# releases publish the workspace to crates.io after all three validation jobs pass.
+# on pushes to main once both pass, its deployment to GitHub Pages. Version tags
+# create a GitHub Release and publish the four crates after validation passes.
 name: CI
 
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
   workflow_dispatch:
-  release:
-    types: [published]
 
 permissions:
   contents: read
@@ -17,7 +16,7 @@ permissions:
 concurrency:
   # A manual CI run must not cancel a release while crates are being uploaded.
   group: ci-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name != 'release' }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/v') }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -34,9 +33,9 @@ jobs:
       - run: rustup toolchain install --no-self-update
       - uses: Swatinem/rust-cache@v2
       - name: Check release version
-        if: github.event_name == 'release'
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           python3 - <<'PY'
           import os
@@ -55,6 +54,12 @@ jobs:
           for name, dependency in root["workspace"]["dependencies"].items():
               if "path" in dependency and dependency.get("version") != version:
                   raise SystemExit(f"{name}: dependency version must be {version}")
+          demo = tomllib.loads(pathlib.Path("examples/web-demo/Cargo.toml").read_text())["package"]
+          examples = tomllib.loads(pathlib.Path("examples/Cargo.toml").read_text())["package"]
+          if demo["version"] != version:
+              raise SystemExit("Web demo version must match the workspace")
+          if demo.get("publish") is not False or examples.get("publish") is not False:
+              raise SystemExit("Examples and the web demo must have publish = false")
           PY
       - run: cargo fmt --all --check
       - run: cargo fmt --check
@@ -142,10 +147,28 @@ jobs:
       - id: deployment
         uses: actions/deploy-pages@v4
 
+  release:
+    name: Create GitHub Release
+    needs: [check, msrv, web-demo]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create release if absent
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if ! gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --verify-tag --title "Glyphux $RELEASE_TAG" --generate-notes
+          fi
+
   publish:
     name: Publish crates.io release
-    needs: [check, msrv, web-demo]
-    if: github.event_name == 'release'
+    needs: [release]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     # Serialize releases, including releases with different tags.
     concurrency:
@@ -156,9 +179,9 @@ jobs:
       - run: rustup toolchain install --no-self-update
       - uses: Swatinem/rust-cache@v2
       # Cargo verifies every package before uploading and handles dependency order.
-      # The examples are excluded by their publish = false manifests.
+      # Explicit package selection also excludes examples and the web demo.
       - name: Verify crate packages
-        run: cargo publish --workspace --locked --dry-run
+        run: cargo publish --registry crates-io --locked -p glyphux -p glyphux-atlas -p glyphux-gpu -p glyphux-cli --dry-run
       - name: Publish crates
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
@@ -167,12 +190,13 @@ jobs:
             echo "::error::Add the CARGO_REGISTRY_TOKEN repository Actions secret before publishing."
             exit 1
           fi
-          cargo publish --workspace --locked
+          cargo publish --registry crates-io --locked -p glyphux -p glyphux-atlas -p glyphux-gpu -p glyphux-cli
 
   cli-binaries:
     name: Offline CLI (${{ matrix.os }})
-    needs: [check, msrv]
-    if: github.event_name == 'release'
+    runs-on: ${{ matrix.os }}
+    needs: [release]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
     strategy:
@@ -191,7 +215,7 @@ jobs:
         run: cargo build --release --locked -p glyphux-cli
       - name: Package offline tools
         env:
-          ARCHIVE: glyphux-cli-${{ github.event.release.tag_name }}-${{ runner.os }}-${{ runner.arch }}.zip
+          ARCHIVE: glyphux-cli-${{ github.ref_name }}-${{ runner.os }}-${{ runner.arch }}.zip
         run: |
           python - <<'PY'
           import os
@@ -210,6 +234,6 @@ jobs:
       - name: Attach tools to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-          ARCHIVE: glyphux-cli-${{ github.event.release.tag_name }}-${{ runner.os }}-${{ runner.arch }}.zip
+          RELEASE_TAG: ${{ github.ref_name }}
+          ARCHIVE: glyphux-cli-${{ github.ref_name }}-${{ runner.os }}-${{ runner.arch }}.zip
         run: gh release upload "$RELEASE_TAG" "$ARCHIVE" --clobber
