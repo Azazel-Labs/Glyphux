@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::process::exit;
 use std::time::Instant;
 
-use clap::{Args, CommandFactory, FromArgMatches, Parser, ValueEnum};
+use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 use glyphux::io::font::{Font, FontScaling};
 use glyphux::io::image::{ImageFormat, save};
 use glyphux::io::svg::SvgPathSelection;
@@ -93,8 +93,10 @@ struct Input {
 
 /// Pure Rust signed distance field generator (msdfgen compatible).
 #[derive(Parser, Debug)]
-#[command(name = "glyphux", version, about = "Signed distance fields (SDF, PSDF, MSDF, MTSDF) for a single shape: font glyph, SVG or shape description.", after_help = AFTER_HELP)]
+#[command(name = "glyphux", version, subcommand_negates_reqs = true, args_conflicts_with_subcommands = true, about = "Offline distance fields for shapes and color emoji atlas baking. Use 'glyphux color --help' for COLR fonts.", after_help = AFTER_HELP)]
 struct Cli {
+    #[command(subcommand)]
+    command: Option<Command>,
     /// Type of distance field
     #[arg(value_enum, default_value_t = Mode::Msdf)]
     mode: Mode,
@@ -225,6 +227,12 @@ struct Cli {
     threads: usize,
 }
 
+#[derive(Debug, Subcommand)]
+enum Command {
+    /// Bake COLR emoji into distance atlas pages and offline shader buffers
+    Color(glyphux_cli::color::ColorArgs),
+}
+
 const AFTER_HELP: &str = "msdfgen-style single-dash options are accepted too, e.g.\n  glyphux msdf -font font.ttf 'A' -o a.png -size 32 32 -pxrange 4 -autoframe";
 
 fn die(msg: impl std::fmt::Display) -> ! {
@@ -240,7 +248,11 @@ fn main() {
     let cmd = Cli::command();
     let matches = cmd.clone().get_matches_from(normalize_args(&cmd, std::env::args_os()));
     let cli = Cli::from_arg_matches(&matches).unwrap_or_else(|e| e.exit());
-    run(&cli);
+    if let Some(Command::Color(options)) = &cli.command {
+        options.run().unwrap_or_else(|error| die(error));
+    } else {
+        run(&cli);
+    }
 }
 
 fn load_glyph(path: &PathBuf, code: &str, vars: &[(String, f32)], scaling: FontScaling) -> (Shape, f64) {

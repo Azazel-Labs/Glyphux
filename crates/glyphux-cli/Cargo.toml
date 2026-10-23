@@ -13,6 +13,7 @@ categories = ["command-line-utilities", "graphics"]
 glyphux = { workspace = true, features = ["font"] }
 glyphux-atlas.workspace = true
 clap.workspace = true
+harfrust = { version = "0.14", default-features = false, features = ["std"] }
 
 # The binaries share their names with the library crates: documenting them would
 # overwrite those crates' docs (cargo#6313).

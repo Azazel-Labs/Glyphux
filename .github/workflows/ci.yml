@@ -168,3 +168,48 @@ jobs:
             exit 1
           fi
           cargo publish --workspace --locked
+
+  cli-binaries:
+    name: Offline CLI (${{ matrix.os }})
+    needs: [check, msrv]
+    if: github.event_name == 'release'
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install --no-self-update
+      - uses: Swatinem/rust-cache@v2
+      - name: Build offline tools
+        run: cargo build --release --locked -p glyphux-cli
+      - name: Package offline tools
+        env:
+          ARCHIVE: glyphux-cli-${{ github.event.release.tag_name }}-${{ runner.os }}-${{ runner.arch }}.zip
+        run: |
+          python - <<'PY'
+          import os
+          import pathlib
+          import zipfile
+
+          suffix = ".exe" if os.name == "nt" else ""
+          with zipfile.ZipFile(os.environ["ARCHIVE"], "w", zipfile.ZIP_DEFLATED) as archive:
+              for name in ("glyphux", "glyphux-atlas"):
+                  binary = pathlib.Path("target/release") / (name + suffix)
+                  archive.write(binary, binary.name)
+              archive.write("LICENSE", "LICENSE")
+              archive.write("docs/cli.md", "README.md")
+              archive.write("docs/color-atlas-format.md", "color-atlas-format.md")
+          PY
+      - name: Attach tools to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          ARCHIVE: glyphux-cli-${{ github.event.release.tag_name }}-${{ runner.os }}-${{ runner.arch }}.zip
+        run: gh release upload "$RELEASE_TAG" "$ARCHIVE" --clobber

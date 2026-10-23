@@ -341,6 +341,39 @@ take the share left over. The alpha channel stores the distance to the emoji's o
 edge, so internal color boundaries do not punch holes in the shape. If no allowed
 tile grid fits the four-recipe limit, compilation returns an error.
 
+The texture supplies the **mixing weights**; separate tables supply the **colors to
+mix**. Each tile's recipe IDs connect the two. This illustrative tile uses recipe 7
+for its R region, recipe 2 for G, recipe 9 for B, and recipe 4 for the residual region:
+
+```mermaid
+flowchart TD
+    T["Tile record: recipe IDs 7, 2, 9, 4"] --> R["Recipe table: ordered paint lists"]
+    T --> A["Atlas patch: RGB region distances + alpha silhouette distance"]
+    R --> E["Example recipe 7: paint 3, then paint 8"]
+    E --> P["Paint table: 3 = solid orange; 8 = translucent yellow gradient"]
+    P --> S["Gradient-stop table: colors and stop positions"]
+    P --> C["Evaluate and composite paints at this pixel"]
+    S --> C
+    A --> W["Compute region weights and outer coverage"]
+    C --> M["Blend recipe colors using region weights"]
+    W --> M
+    M --> O["Apply outer coverage to the blended color"]
+```
+
+The recipe numbers above are examples, not fixed IDs for the pictured emoji.
+On the CPU, `ColorField` owns the tiles, recipes and paints. On the GPU, each glyph
+has separate tile, recipe, paint and gradient-stop storage buffers. A recipe's
+header stores an offset and a count into a packed list of paint IDs. The shader
+reads that list in order and composites each paint over the preceding result.
+Solid paints store RGBA values; gradient paints store geometry and reference their
+stops in the gradient-stop table.
+
+The atlas image alone cannot reconstruct the emoji: it also needs those tables.
+Both `glyphux color` and `glyphux-atlas color` bake these distance pages and tables
+together, with glyph metrics and a WGSL decoder. See the
+[offline color atlas format](docs/color-atlas-format.md) for the files and buffer bindings.
+A finished PNG is available only through the optional `--preview` flag.
+
 ![Actual GPU readback of three color glyphs sharing one atlas page, with a second page still unallocated](docs/figures/color-atlas.svg)
 
 `ColorRenderer` packs each glyph's distance image into a free rectangle on a shared
@@ -407,17 +440,81 @@ Rendering an MSDF works as usual: sample, take the median of the three channels,
 
 ## Command line
 
-Both tools are built with clap (`--help` lists everything, grouped by topic). Option names
-follow msdfgen / msdf-atlas-gen, and their single-dash spelling (`-pxrange 4`) is rewritten to
-`--pxrange 4` before parsing, so existing scripts keep working.
+Both tools run offline. [Download native tools](https://github.com/Azazel-Labs/Glyphux/releases)
+or build with `cargo build --release -p glyphux-cli`. See the
+[offline CLI guide](docs/cli.md) for installation and color options.
 
-`glyphux [sdf|psdf|msdf|mtsdf|metrics] <input> [options]`. Inputs:
-`--font <file> <char>` (`'A'`, `65`, `0x41`, or glyph index `g36`), `--svg <file>`,
-`--shapedesc <file>`, `--defineshape "<desc>"`, `--stdin`. Common options: `-o`, `--size`/`--dimensions`,
-`--pxrange`, `--range`, `--scale`, `--translate`, `--autoframe`, `--angle`, `--coloringstrategy`,
-`--errorcorrection`, `--fillrule`, `--testrender`, `--exportshape`, `--printmetrics`, `--threads`, `--stats`.
+### Choose a command
 
-`glyphux-atlas --font <file> [--charset <file> | --chars <spec> | --glyphset <file> | --allglyphs] --imageout <file> [--json <file>] [--csv <file>] [options]`.
+| Command | Input | Output |
+| :--- | :--- | :--- |
+| `glyphux color` / `glyphux-atlas color` | COLRv0/v1 font and selected emoji or glyph IDs | Distance atlas pages, binary tables, JSON metadata and WGSL |
+| `glyphux sdf` / `psdf` | Font glyph, SVG or shape description | Single-channel distance field |
+| `glyphux msdf` | Font glyph, SVG or shape description | Multi-channel distance field (default mode) |
+| `glyphux mtsdf` | Font glyph, SVG or shape description | MSDF with true distance in alpha |
+| `glyphux metrics` | Font glyph, SVG or shape description | Bounds and framing information |
+| `glyphux-atlas` | Font and character or glyph selection | Atlas image with optional JSON/CSV layout |
+
+### Quick examples
+
+```sh
+# Color emoji: bake distance pages and shader buffers, entirely offline
+glyphux-atlas color --font Noto-COLRv1.ttf --text "🔥" --text "😀" -o emoji-atlas
+
+# Single glyph: 32 by 32 MSDF
+glyphux msdf --font MyFont.ttf A --size 32 32 --pxrange 4 --autoframe -o a.png
+
+# Font atlas: image and JSON layout
+glyphux-atlas --font MyFont.ttf --type msdf --size 32 --imageout atlas.png --json atlas.json
+```
+
+Supported emoji sequences are shaped before rendering. No browser or GPU is required.
+
+### Common options
+
+**Color emoji baking** (`glyphux color` or `glyphux-atlas color`)
+
+| Purpose | Options |
+| :--- | :--- |
+| Font and glyphs | `--font FILE`, repeated `--text EMOJI` or `--glyph-index ID`, or `--allglyphs` |
+| Font settings | `--font-index N`, `--palette N`, `--fontvar AXIS=VALUE` |
+| Artwork colors | `--foreground RRGGBBAA`, `--palette N` |
+| Baked output | `-o DIR`, `--page-size N`, `--max-pages N` |
+| Optional single-glyph preview | `--preview FILE`, `--size N`, `--background RRGGBBAA` |
+| Field quality | `--resolution N`, `--base-resolution N`, `--range R`, `--min-pixels N`, `--max-grid N` |
+| Diagnostics | `--stats` |
+
+**Single-shape distance fields** (`glyphux sdf`, `psdf`, `msdf`, `mtsdf`, `metrics`)
+
+| Purpose | Options |
+| :--- | :--- |
+| Font input | `--font FILE CHAR` (`A`, `65`, `0x41` or glyph index `g36`) |
+| Other input | `--svg FILE`, `--shapedesc FILE`, `--defineshape DESC` or `--stdin` |
+| Output | `-o FILE`, `--size W H` (alias: `--dimensions`) |
+| Framing | `--autoframe`, `--scale`, `--translate` |
+| Distance range | `--pxrange`, `--range` |
+| Shape processing | `--angle`, `--coloringstrategy`, `--fillrule`, `--errorcorrection` |
+| Preview and export | `--testrender FILE W H`, `--exportshape FILE` |
+| Performance and diagnostics | `--threads N`, `--printmetrics`, `--stats` |
+
+**Font atlases** (`glyphux-atlas`)
+
+| Purpose | Options |
+| :--- | :--- |
+| Font | `--font FILE` |
+| Character selection | `--charset FILE` or `--chars SPEC` |
+| Glyph selection | `--glyphset FILE` or `--allglyphs` |
+| Atlas image | `--imageout FILE` |
+| Layout export | `--json FILE`, `--csv FILE` |
+
+Run `glyphux --help`, `glyphux color --help` or `glyphux-atlas --help` for the
+complete options and defaults. The [offline CLI guide](docs/cli.md) explains color
+field quality settings and supported font formats.
+
+### msdfgen compatibility
+
+Distance-field and atlas options follow msdfgen / msdf-atlas-gen. Single-dash
+spellings such as `-pxrange 4` are accepted alongside `--pxrange 4`.
 
 Differences from msdfgen's defaults: ink-trap coloring, contour reorientation (`-noorient`
 to disable) and the "auto" error correction mode even with the scanline pass (msdfgen falls

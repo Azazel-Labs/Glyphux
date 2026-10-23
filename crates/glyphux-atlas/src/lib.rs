@@ -17,6 +17,7 @@
 //! ```
 
 pub mod charset;
+pub mod color;
 pub mod layout;
 pub mod pack;
 

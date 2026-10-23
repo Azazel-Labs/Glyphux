@@ -97,7 +97,9 @@ between the stored radii, and blend the corresponding gradient stops. These tabl
 references are **32-bit indices**. The texture's R channel is an **8-bit distance**;
 it does not hold the gradient number.
 
-The exact layouts and reads are in [`color.wgsl`](src/shaders/color.wgsl).
+The exact layouts and reads are in the shared [`color.wgsl`](../glyphux/src/color/color.wgsl).
+For offline baking and direct buffer bindings, see the
+[color atlas format](../../docs/color-atlas-format.md).
 
 ![GPU readback of fire, grinning face and robot sharing one color atlas page](../../docs/figures/color-atlas.svg)
 

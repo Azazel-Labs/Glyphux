@@ -295,6 +295,7 @@ dependencies = [
  "clap",
  "glyphux",
  "glyphux-atlas",
+ "harfrust",
 ]
 
 [[package]]

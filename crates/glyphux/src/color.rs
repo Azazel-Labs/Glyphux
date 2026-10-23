@@ -3,7 +3,9 @@
 //! RGB stores up to three region SDFs; alpha stores the independent outer union SDF.
 //! These fields are linear data, not MSDFs and not premultiplied color images.
 
+mod buffers;
 mod fields;
+pub use buffers::{ColorGpuData, ColorPaintData, ColorStopData, ColorTileData};
 #[cfg(feature = "font")]
 mod font;
 
@@ -286,3 +288,6 @@ pub fn srgb_to_linear(v: f32) -> f32 {
         ((v + 0.055) / 1.055).powf(2.4)
     }
 }
+
+/// WGSL decoder for the version 1 color atlas buffer layout.
+pub const COLOR_SHADER: &str = include_str!("color/color.wgsl");

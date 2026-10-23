@@ -5,7 +5,7 @@
 //! monochrome text styles (outlines, weight and shadows) do not apply to this pipeline.
 
 use crate::GlyphKey;
-use glyphux::color::{ColorError, ColorField, Extend, Paint};
+use glyphux::color::{ColorError, ColorField, ColorGpuData};
 use std::collections::HashMap;
 use wgpu::util::DeviceExt;
 
@@ -34,7 +34,7 @@ struct Page {
     free: Vec<Rect>,
 }
 
-pub(crate) const COLOR_SHADER: &str = include_str!("shaders/color.wgsl");
+pub(crate) const COLOR_SHADER: &str = glyphux::color::COLOR_SHADER;
 
 /// One color glyph placed in screen pixels. The font key must distinguish palette,
 /// foreground color and variation instance as well as font face.
@@ -76,29 +76,6 @@ struct Instance {
     transform: [f32; 4],
     opacity: f32,
     padding: [f32; 3],
-}
-#[repr(C)]
-#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-struct Tile {
-    origin: [u32; 2],
-    mode: u32,
-    padding: u32,
-    ids: [u32; 4],
-}
-#[repr(C)]
-#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-struct GpuPaint {
-    header: [u32; 4],
-    color: [f32; 4],
-    row0: [f32; 4],
-    row1: [f32; 4],
-    geometry: [f32; 4],
-}
-#[repr(C)]
-#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-struct Stop {
-    color: [f32; 4],
-    offset: [f32; 4],
 }
 
 struct Uploaded {
@@ -292,79 +269,12 @@ impl ColorRenderer {
         if width.max(height) > self.config.page_size {
             return Err(ColorError::Invalid("color glyph exceeds configured page size"));
         }
-        let mut paints = Vec::new();
-        let mut stops = Vec::new();
-        let premultiply = |c: [f32; 4]| [c[0] * c[3], c[1] * c[3], c[2] * c[3], c[3]];
-        for paint in field.paints() {
-            let mut p = GpuPaint {
-                header: [0; 4],
-                color: [0.0; 4],
-                row0: [0.0; 4],
-                row1: [0.0; 4],
-                geometry: [0.0; 4],
-            };
-            match paint {
-                Paint::Solid(c) => p.color = premultiply(*c),
-                Paint::Linear {
-                    inverse, origin, line, ..
-                }
-                | Paint::Radial {
-                    inverse,
-                    center: origin,
-                    line,
-                    ..
-                } => {
-                    p.header = [
-                        if matches!(paint, Paint::Linear { .. }) { 1 } else { 2 },
-                        match line.extend {
-                            Extend::Pad => 0,
-                            Extend::Repeat => 1,
-                            Extend::Reflect => 2,
-                        },
-                        stops.len() as u32,
-                        line.stops.len() as u32,
-                    ];
-                    p.row0 = [inverse.0[0] as f32, inverse.0[1] as f32, inverse.0[2] as f32, 0.0];
-                    p.row1 = [inverse.0[3] as f32, inverse.0[4] as f32, inverse.0[5] as f32, 0.0];
-                    p.geometry = match paint {
-                        Paint::Linear { direction, .. } => {
-                            [origin.x as f32, origin.y as f32, direction.x as f32, direction.y as f32]
-                        }
-                        Paint::Radial { r0, r1, .. } => [origin.x as f32, origin.y as f32, *r0 as f32, *r1 as f32],
-                        Paint::Solid(_) => unreachable!(),
-                    };
-                    for stop in &line.stops {
-                        stops.push(Stop {
-                            color: premultiply(stop.color),
-                            offset: [stop.offset as f32, 0.0, 0.0, 0.0],
-                        });
-                    }
-                }
-            }
-            paints.push(p);
-        }
-        if paints.is_empty() {
-            paints.push(bytemuck::Zeroable::zeroed());
-        }
-        if stops.is_empty() {
-            stops.push(bytemuck::Zeroable::zeroed());
-        }
-        let mut tiles: Vec<_> = field
-            .tiles()
-            .iter()
-            .map(|t| Tile {
-                origin: t.origin,
-                mode: t.mode as u32,
-                padding: 0,
-                ids: t.recipes,
-            })
-            .collect();
-        let mut recipes = vec![0u32; (field.recipes().len() * 2).max(1)];
-        for (id, recipe) in field.recipes().iter().enumerate() {
-            recipes[id * 2] = recipes.len() as u32;
-            recipes[id * 2 + 1] = recipe.len() as u32;
-            recipes.extend(recipe.iter().map(|&i| i as u32));
-        }
+        let ColorGpuData {
+            mut tiles,
+            paints,
+            stops,
+            recipes,
+        } = field.gpu_data();
         let data: [&[u8]; 4] = [
             bytemuck::cast_slice(&tiles),
             bytemuck::cast_slice(&paints),

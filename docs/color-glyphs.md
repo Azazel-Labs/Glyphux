@@ -1,5 +1,10 @@
 # Color glyphs
 
+For offline distance atlas and buffer baking, use
+`glyphux-atlas color --font font.ttf --text "🔥" -o fire-atlas`.
+See the [baked format and loader guide](color-atlas-format.md) for pages, binary tables
+and shader bindings. Add `--preview fire.png` only when a decoded preview is wanted.
+
 Glyphux supports the local region-distance representation from the v0.16 color-glyph
 prototype. The CPU imports [COLR](https://learn.microsoft.com/en-us/typography/opentype/spec/colr) artwork and compiles a `ColorField`. The GPU evaluates
 its paints and recipes while drawing a glyph quad. The existing monochrome MSDF path

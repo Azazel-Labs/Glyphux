@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::process::exit;
 use std::time::Instant;
 
-use clap::{Args, CommandFactory, FromArgMatches, Parser, ValueEnum};
+use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 use glyphux::io::image::ImageFormat;
 use glyphux::{GeneratorConfig, Range};
 use glyphux_atlas::{
@@ -124,11 +124,14 @@ struct Constraint {
 /// Font atlas generator built on glyphux (msdf-atlas-gen compatible).
 #[derive(Parser, Debug)]
 #[command(name = "glyphux-atlas", version, about = "Font atlas generator: packs SDF, PSDF, MSDF, MTSDF or mask glyphs into one image with a JSON/CSV layout.", after_help = AFTER_HELP)]
+#[command(subcommand_negates_reqs = true, args_conflicts_with_subcommands = true)]
 struct Cli {
+    #[command(subcommand)]
+    command: Option<Command>,
     // ---- Input
     /// Font file (TrueType / OpenType)
-    #[arg(long, value_name = "FILE", help_heading = "Input")]
-    font: PathBuf,
+    #[arg(long, required = true, value_name = "FILE", help_heading = "Input")]
+    font: Option<PathBuf>,
     /// Face index in a font collection
     #[arg(long, default_value_t = 0, help_heading = "Input")]
     faceindex: u32,
@@ -257,10 +260,20 @@ fn read(path: &PathBuf) -> String {
     std::fs::read_to_string(path).unwrap_or_else(|e| die(format!("cannot read {}: {e}", path.display())))
 }
 
+#[derive(Debug, Subcommand)]
+enum Command {
+    /// Bake COLR emoji into distance atlas pages and offline shader buffers
+    Color(glyphux_cli::color::ColorArgs),
+}
+
 fn main() {
     let cmd = Cli::command();
     let matches = cmd.clone().get_matches_from(normalize_args(&cmd, std::env::args_os()));
     let cli = Cli::from_arg_matches(&matches).unwrap_or_else(|e| e.exit());
+    if let Some(Command::Color(options)) = &cli.command {
+        options.run().unwrap_or_else(|error| die(error));
+        return;
+    }
     if cli.imageout.is_none() && cli.json.is_none() && cli.csv.is_none() {
         die("no output specified (use --imageout, --json and/or --csv)");
     }
@@ -290,7 +303,8 @@ fn main() {
         orient: !cli.noorient,
         kerning: !cli.nokerning,
     };
-    let data = std::fs::read(&cli.font).unwrap_or_else(|e| die(format!("cannot read {}: {e}", cli.font.display())));
+    let font_path = cli.font.as_ref().unwrap_or_else(|| die("--font is required"));
+    let data = std::fs::read(font_path).unwrap_or_else(|e| die(format!("cannot read {}: {e}", font_path.display())));
     let font = FontGeometry::load(&data, cli.faceindex, &cli.fontvar, &selection, &opts).unwrap_or_else(|e| die(e));
     if !font.missing.is_empty() {
         eprintln!(
