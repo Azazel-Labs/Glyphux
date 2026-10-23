@@ -1,0 +1,30 @@
+[package]
+name = "glyphux-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Command line tools for glyphux: glyphux (single shapes, msdfgen compatible) and glyphux-atlas (font atlases, msdf-atlas-gen compatible)"
+keywords = ["msdf", "sdf", "font", "atlas", "cli"]
+categories = ["command-line-utilities", "graphics"]
+
+[dependencies]
+glyphux = { workspace = true, features = ["font"] }
+glyphux-atlas.workspace = true
+clap.workspace = true
+
+# The binaries share their names with the library crates: documenting them would
+# overwrite those crates' docs (cargo#6313).
+[[bin]]
+name = "glyphux"
+path = "src/bin/glyphux.rs"
+doc = false
+
+[[bin]]
+name = "glyphux-atlas"
+path = "src/bin/glyphux-atlas.rs"
+doc = false
+
+[lints]
+workspace = true

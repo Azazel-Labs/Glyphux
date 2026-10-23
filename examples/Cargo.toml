@@ -1,6 +1,6 @@
 [package]
-name = "textra-examples"
-description = "Runnable demos of textra and textra-gpu (cargo run --release --bin <name>)"
+name = "glyphux-examples"
+description = "Runnable demos of glyphux and glyphux-gpu (cargo run --release --bin <name>)"
 version.workspace = true
 edition.workspace = true
 rust-version = "1.93"
@@ -8,8 +8,8 @@ license.workspace = true
 publish = false
 
 [dependencies]
-textra.workspace = true
-textra-gpu = { workspace = true, features = ["demo"] }
+glyphux.workspace = true
+glyphux-gpu = { workspace = true, features = ["demo"] }
 
 [[bin]]
 name = "glyph"

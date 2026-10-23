@@ -1,8 +1,8 @@
-# textra-gpu web demo
+# glyphux-gpu web demo
 
-Live: https://azazel-labs.github.io/Textra/ (deployed by CI from main).
+Live: https://azazel-labs.github.io/Glyphux/ (deployed by CI from main).
 
-The `textra_gpu::demo::Scene` in a browser canvas on WebGPU. Monochrome glyph fields are
+The `glyphux_gpu::demo::Scene` in a browser canvas on WebGPU. Monochrome glyph fields are
 generated on the GPU the first time they are needed at a size level. Color emoji rendering
 compiles its bundled COLR outlines once at startup, then evaluates cached region-distance
 fields and analytic paints on the GPU.
@@ -51,7 +51,7 @@ cargo install wasm-bindgen-cli --version <wasm-bindgen version in Cargo.lock> --
 
 cargo build --release                   # .cargo/config.toml makes wasm32 the default target
 wasm-bindgen --target web --no-typescript --out-dir pkg \
-  target/wasm32-unknown-unknown/release/textra_gpu_web_demo.wasm
+  target/wasm32-unknown-unknown/release/glyphux_gpu_web_demo.wasm
 python3 -m http.server 8000 --bind 127.0.0.1   # then open http://127.0.0.1:8000
 ```
 

@@ -33,9 +33,9 @@ jobs:
       - run: cargo fmt --check
         working-directory: examples/web-demo
       - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
-      # textra's optional features: without fonts, and with only the GPU data.
-      - run: cargo check -p textra --no-default-features --all-targets
-      - run: cargo check -p textra --no-default-features --features gpu --all-targets
+      # glyphux's optional features: without fonts, and with only the GPU data.
+      - run: cargo check -p glyphux --no-default-features --all-targets
+      - run: cargo check -p glyphux --no-default-features --features gpu --all-targets
       - run: cargo doc --workspace --no-deps
         env:
           RUSTDOCFLAGS: -D warnings
@@ -48,11 +48,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # The manifests' rust-version: 1.85 for the core crates, 1.93 for textra-gpu (wgpu 30).
+      # The manifests' rust-version: 1.85 for the core crates, 1.93 for glyphux-gpu (wgpu 30).
       - run: rustup toolchain install 1.85 1.93 --profile minimal --no-self-update
       - uses: Swatinem/rust-cache@v2
-      - run: cargo +1.85 check -p textra -p textra-atlas -p textra-cli --all-targets
-      - run: cargo +1.93 check -p textra-gpu -p textra-examples --all-targets
+      - run: cargo +1.85 check -p glyphux -p glyphux-atlas -p glyphux-cli --all-targets
+      - run: cargo +1.93 check -p glyphux-gpu -p glyphux-examples --all-targets
 
   web-demo:
     name: Web demo (wasm)
@@ -83,10 +83,10 @@ jobs:
       - name: Bind and optimize
         run: |
           wasm-bindgen --target web --no-typescript --out-dir pkg \
-            target/wasm32-unknown-unknown/release/textra_gpu_web_demo.wasm
+            target/wasm32-unknown-unknown/release/glyphux_gpu_web_demo.wasm
           wasm-opt -O3 --enable-simd --enable-bulk-memory --enable-nontrapping-float-to-int \
             --enable-sign-ext --enable-mutable-globals --enable-reference-types --enable-multivalue \
-            pkg/textra_gpu_web_demo_bg.wasm -o pkg/textra_gpu_web_demo_bg.wasm
+            pkg/glyphux_gpu_web_demo_bg.wasm -o pkg/glyphux_gpu_web_demo_bg.wasm
           ls -l pkg
       - name: Assemble the site
         run: |

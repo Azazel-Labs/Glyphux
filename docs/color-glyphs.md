@@ -1,13 +1,13 @@
 # Color glyphs
 
-Textra supports the local region-distance representation from the v0.16 color-glyph
+Glyphux supports the local region-distance representation from the v0.16 color-glyph
 prototype. The CPU imports [COLR](https://learn.microsoft.com/en-us/typography/opentype/spec/colr) artwork and compiles a `ColorField`. The GPU evaluates
 its paints and recipes while drawing a glyph quad. The existing monochrome MSDF path
 continues to use `GlyphAtlas` and `TextRenderer`.
 
 ```rust
-use textra::color::{ColorField, ColorFieldConfig};
-use textra::io::font::{Font, FontScaling};
+use glyphux::color::{ColorField, ColorFieldConfig};
+use glyphux::io::font::{Font, FontScaling};
 
 let bytes = std::fs::read("Noto-COLRv1.ttf")?;
 let font = Font::from_bytes(&bytes, 0, FontScaling::EmNormalized)?;
@@ -24,7 +24,7 @@ mixed-font run selection remain the application's responsibility.
 
 ## GPU drawing
 
-`textra_gpu::color::ColorRenderer` uploads compiled fields and draws
+`glyphux_gpu::color::ColorRenderer` uploads compiled fields and draws
 `ColorGlyphInstance`s. Call `upload` once, `prepare` with the viewport and instances,
 then `render` inside the render pass. `ColorGlyphInstance::new` places the field using
 its baseline-relative plane bounds and pixels per em. Add the shaped glyph's x/y
@@ -82,7 +82,7 @@ outer coverage remain separate. The interpolation convention follows the
 
 ## Supported scope and limits
 
-- [COLRv0](https://learn.microsoft.com/en-us/typography/opentype/spec/colr#overview) solid layers and supported [COLRv1](https://learn.microsoft.com/en-us/typography/opentype/spec/colr#graphic-compositions) paint graphs, through Textra's existing
+- [COLRv0](https://learn.microsoft.com/en-us/typography/opentype/spec/colr#overview) solid layers and supported [COLRv1](https://learn.microsoft.com/en-us/typography/opentype/spec/colr#graphic-compositions) paint graphs, through Glyphux's existing
   `ttf-parser` dependency. Outline and paint transforms are distinct. Explicit
   foreground RGBA resolves font foreground-color references.
 - Affine transforms in imported artwork. Clip boxes are accepted only when they
@@ -111,8 +111,8 @@ outer coverage remain separate. The interpolation convention follows the
 ## Run the example
 
 ```text
-cargo run --release --bin color_glyph -- crates/textra/tests/assets/Noto-COLRv1-Subset.ttf "🔥" target/fire.png 256 gpu
-cargo run --release --bin color_glyph -- crates/textra/tests/assets/Twemoji-Subset.ttf "🤖" target/robot.png 128 cpu
+cargo run --release --bin color_glyph -- crates/glyphux/tests/assets/Noto-COLRv1-Subset.ttf "🔥" target/fire.png 256 gpu
+cargo run --release --bin color_glyph -- crates/glyphux/tests/assets/Twemoji-Subset.ttf "🤖" target/robot.png 128 cpu
 ```
 
 The GPU example composites over a dark background. The CPU example writes a

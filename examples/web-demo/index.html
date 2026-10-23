@@ -3,11 +3,11 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>textra-gpu</title>
+  <title>glyphux-gpu</title>
   <link rel="icon" href="data:,">
   <style>
     html, body { margin: 0; height: 100%; background: #14161c; color: #9a9ca3; font: 14px system-ui, sans-serif; }
-    #textra { display: block; width: 100vw; height: 100vh; }
+    #glyphux { display: block; width: 100vw; height: 100vh; }
     #status { position: fixed; left: 16px; bottom: 16px; }
     #panel {
       position: fixed; right: 16px; bottom: 16px; width: min(360px, calc(100vw - 32px));
@@ -25,7 +25,7 @@
   </style>
 </head>
 <body>
-  <canvas id="textra"></canvas>
+  <canvas id="glyphux"></canvas>
   <div id="status">Loading… (needs a browser with WebGPU)</div>
   <div id="panel" hidden>
     <label>Text on the spline
@@ -49,7 +49,7 @@
     // frame (and takes its scale from it). Where the browser reports the exact device-pixel
     // size it is used; otherwise the CSS size times the device pixel ratio, refitted also
     // when the ratio changes without a resize (moving the window to another display).
-    const canvas = document.getElementById("textra");
+    const canvas = document.getElementById("glyphux");
     const fit = (entry) => {
       const box = entry?.devicePixelContentBoxSize?.[0];
       const r = window.devicePixelRatio || 1;
@@ -69,7 +69,7 @@
     if (!navigator.gpu) {
       document.getElementById("status").textContent = "This demo needs WebGPU (Chrome/Edge 113+, Safari 26+, Firefox 141+ on Windows).";
     } else {
-      const demo = await import("./pkg/textra_gpu_web_demo.js");
+      const demo = await import("./pkg/glyphux_gpu_web_demo.js");
       await demo.default();
       setup(demo);
     }

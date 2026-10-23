@@ -5,15 +5,15 @@
 use std::fmt::Write as _;
 use std::sync::Arc;
 
-use textra::gpu::{FieldKind, bin_tiles};
-use textra::io::font::{Font, FontScaling};
-use textra::io::png::encode_png;
-use textra::{
+use glyphux::gpu::{FieldKind, bin_tiles};
+use glyphux::io::font::{Font, FontScaling};
+use glyphux::io::png::encode_png;
+use glyphux::{
     Bitmap, ColoringStrategy, DEFAULT_ANGLE_THRESHOLD, Edge, ErrorCorrectionConfig, FillRule, GeneratorConfig,
     PreparedShape, Projection, Range, Segment, Shape, Transform, Vec2, edge_coloring, generate_msdf, generate_sdf,
     median,
 };
-use textra_gpu::{AtlasConfig, GlyphAtlas, GlyphKey, Shaper, ShapingFont, default_device, read_texture_layer, wgpu};
+use glyphux_gpu::{AtlasConfig, GlyphAtlas, GlyphKey, Shaper, ShapingFont, default_device, read_texture_layer, wgpu};
 
 const ASSETS: &str = "examples/web-demo/assets";
 const OUTLINE: &str = "#e8590c";
@@ -300,7 +300,7 @@ fn enlarge(w: u32, h: u32, rgb: &[u8], k: u32) -> Vec<u8> {
 }
 
 fn byte(v: f32) -> u8 {
-    textra::float_to_byte(v)
+    glyphux::float_to_byte(v)
 }
 
 /// A legend row of colored line swatches.
@@ -698,7 +698,7 @@ fn field(g: &GlyphField) -> String {
     // Each channel thresholded at its own edge, against the true outline.
     let k = 6;
     let (rw, rh) = (g.w * k, g.h * k);
-    let channels = textra::render_sdf_multi(&msdf, rw, rh, g.px_range, 0.5);
+    let channels = glyphux::render_sdf_multi(&msdf, rw, rh, g.px_range, 0.5);
     let x = 20.0 + pw + 32.0;
     for (c, (name, color)) in [
         ("red", [229u8, 56, 59]),
@@ -856,7 +856,7 @@ fn correction(g: &GlyphField) -> String {
     {
         let x = 20.0 + i as f64 * (pw + 20.0);
         let y = 62.0;
-        let cov = textra::render_sdf(f, g.w * k, g.h * k, g.px_range, 0.5);
+        let cov = glyphux::render_sdf(f, g.w * k, g.h * k, g.px_range, 0.5);
         let px: Vec<u8> = cov
             .data()
             .iter()
@@ -943,7 +943,7 @@ fn shaping(inter: Vec<u8>) -> String {
 fn shaping_panel(
     svg: &mut Svg,
     font: &ShapingFont,
-    line: &textra_gpu::ShapedLine,
+    line: &glyphux_gpu::ShapedLine,
     title: &str,
     text: &str,
     x0: f64,
@@ -1040,7 +1040,7 @@ fn shaping_panel(
 }
 
 /// The cluster (byte offset) the character at `offset` was shaped into.
-fn cluster_of(line: &textra_gpu::ShapedLine, offset: usize) -> Option<u32> {
+fn cluster_of(line: &glyphux_gpu::ShapedLine, offset: usize) -> Option<u32> {
     line.glyphs
         .iter()
         .map(|g| g.cluster)
@@ -1062,7 +1062,7 @@ fn atlas(inter: &[u8]) -> Result<Vec<u8>, String> {
         Font::from_bytes(&jp, 0, FontScaling::EmNormalized).unwrap(),
     ];
     let requests: [(u32, &str, f64); 6] = [
-        (0, "textra-gpu", 220.0),
+        (0, "glyphux-gpu", 220.0),
         (1, "拡大と滑走", 120.0),
         (0, "Glyphs at every size", 72.0),
         (0, "Sharp corners at any zoom · outlines · glows", 30.0),
@@ -1105,7 +1105,7 @@ fn atlas(inter: &[u8]) -> Result<Vec<u8>, String> {
 
 // ---------------------------------------------------------------------------------------------
 // GPU batch figures: the buffers of one generation batch, built from real glyphs the way
-// textra-gpu's prepare_job and FieldGenerator::upload lay them out.
+// glyphux-gpu's prepare_job and FieldGenerator::upload lay them out.
 
 /// Bytes of the WGSL `Glyph` record (common.wgsl: 36 four-byte fields).
 const GLYPH_RECORD: usize = 144;
@@ -1124,14 +1124,14 @@ struct BatchGlyph {
     tile_groups: usize,
     cands: usize,
     corners: usize,
-    bins: textra::gpu::TileBins,
+    bins: glyphux::gpu::TileBins,
 }
 
 impl BatchGlyph {
     fn new(g: &GlyphField, name: char) -> Self {
-        let gpu = textra::gpu::GpuShape::new(&g.prepared);
+        let gpu = glyphux::gpu::GpuShape::new(&g.prepared);
         let bins = bin_tiles(&g.prepared, &g.transform, g.w, g.h, 8, FieldKind::MTSDF, true);
-        let corners = textra::gpu::corner_texels(&g.prepared, &g.transform, g.w, g.h);
+        let corners = glyphux::gpu::corner_texels(&g.prepared, &g.transform, g.w, g.h);
         // Sign correction: a start index per row (and one past the last), then (x, dir) pairs.
         let mut crossings = 0;
         let mut row = Vec::new();
@@ -1184,9 +1184,9 @@ fn kb(bytes: usize) -> String {
 /// The ten storage buffers of one batch, each the concatenation of every glyph's part, with
 /// one glyph's record offsets pointing into them.
 fn batch_buffers(glyphs: &[BatchGlyph]) -> String {
-    let edge = size_of::<textra::gpu::GpuEdge>();
-    let contour = size_of::<textra::gpu::GpuContour>();
-    let group = size_of::<textra::gpu::GpuTileGroup>();
+    let edge = size_of::<glyphux::gpu::GpuEdge>();
+    let contour = size_of::<glyphux::gpu::GpuContour>();
+    let group = size_of::<glyphux::gpu::GpuTileGroup>();
     let sel = 1; // the glyph whose offsets are shown
     let prefix = |f: &dyn Fn(&BatchGlyph) -> usize| glyphs[..sel].iter().map(f).sum::<usize>();
     // (binding, name, element, bytes per element, count per glyph, offset label for `sel`,

@@ -1,7 +1,7 @@
 //! Color figures use the real compiler, atlas bytes, tile descriptors and CPU decoder.
 use super::{INK, MUTED, OUTLINE, Svg, encode_png};
-use textra::color::{ColorField, ColorFieldConfig, TileMode};
-use textra::io::font::{Font, FontScaling};
+use glyphux::color::{ColorField, ColorFieldConfig, TileMode};
+use glyphux::io::font::{Font, FontScaling};
 
 fn field(bytes: &[u8], character: char) -> ColorField {
     let font = Font::from_bytes(bytes, 0, FontScaling::EmNormalized).unwrap();
@@ -21,7 +21,7 @@ fn rendered(field: &ColorField, size: u32) -> Vec<u8> {
         .flat_map(|p| {
             let channel = |c: f32| {
                 let linear = c + 1.0 - p[3]; // Composite premultiplied color over white.
-                textra::float_to_byte(if linear <= 0.0031308 {
+                glyphux::float_to_byte(if linear <= 0.0031308 {
                     12.92 * linear
                 } else {
                     1.055 * linear.powf(1.0 / 2.4) - 0.055
@@ -38,9 +38,9 @@ fn label(svg: &mut Svg, x: f64, y: f64, text: &str) {
 }
 
 pub(super) fn write(out: &str) {
-    let noto = include_bytes!("../crates/textra/tests/assets/Noto-COLRv1-Subset.ttf");
+    let noto = include_bytes!("../crates/glyphux/tests/assets/Noto-COLRv1-Subset.ttf");
     let robot = field(
-        include_bytes!("../crates/textra/tests/assets/Twemoji-Subset.ttf"),
+        include_bytes!("../crates/glyphux/tests/assets/Twemoji-Subset.ttf"),
         '\u{1f916}',
     );
     let fire = field(noto, '\u{1f525}');
@@ -229,8 +229,8 @@ pub(super) fn write(out: &str) {
 
 /// Capture the actual shared GPU page, with vector annotations and a pixel-exact crop.
 fn shared_atlas(out: &str, fields: &[&ColorField]) {
-    use textra_gpu::color::ColorRenderer;
-    use textra_gpu::{GlyphKey, default_device, read_texture_layer, wgpu};
+    use glyphux_gpu::color::ColorRenderer;
+    use glyphux_gpu::{GlyphKey, default_device, read_texture_layer, wgpu};
     let (_, device, queue) = default_device().expect("GPU required for shared color atlas figure");
     let mut renderer = ColorRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
     assert_eq!(renderer.page_count(), 0);

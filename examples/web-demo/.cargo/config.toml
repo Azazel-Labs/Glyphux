@@ -2,6 +2,6 @@
 [build]
 target = "wasm32-unknown-unknown"
 
-# 128-bit SIMD (every browser with WebGPU has it): textra's distance loops autovectorize.
+# 128-bit SIMD (every browser with WebGPU has it): glyphux's distance loops autovectorize.
 [target.wasm32-unknown-unknown]
 rustflags = ["-C", "target-feature=+simd128"]

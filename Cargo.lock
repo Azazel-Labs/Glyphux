@@ -875,7 +875,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "textra"
+name = "glyphux"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
@@ -883,37 +883,37 @@ dependencies = [
 ]
 
 [[package]]
-name = "textra-atlas"
+name = "glyphux-atlas"
 version = "0.1.0"
 dependencies = [
- "textra",
+ "glyphux",
 ]
 
 [[package]]
-name = "textra-cli"
+name = "glyphux-cli"
 version = "0.1.0"
 dependencies = [
  "clap",
- "textra",
- "textra-atlas",
+ "glyphux",
+ "glyphux-atlas",
 ]
 
 [[package]]
-name = "textra-examples"
+name = "glyphux-examples"
 version = "0.1.0"
 dependencies = [
- "textra",
- "textra-gpu",
+ "glyphux",
+ "glyphux-gpu",
 ]
 
 [[package]]
-name = "textra-gpu"
+name = "glyphux-gpu"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
  "harfrust",
  "naga",
- "textra",
+ "glyphux",
  "unicode-bidi",
  "wgpu",
 ]

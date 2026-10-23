@@ -28,23 +28,23 @@
       "cwd": "${workspaceFolder}"
     },
     {
-      "name": "textra-cli: textra (glyph to PNG)",
+      "name": "glyphux-cli: glyphux (glyph to PNG)",
       "type": "lldb",
       "request": "launch",
       "cargo": {
-        "args": ["build", "-p", "textra-cli", "--bin", "textra"],
-        "filter": { "name": "textra", "kind": "bin" }
+        "args": ["build", "-p", "glyphux-cli", "--bin", "glyphux"],
+        "filter": { "name": "glyphux", "kind": "bin" }
       },
-      "args": ["msdf", "-font", "${input:font}", "${input:char}", "-o", "${workspaceFolder}/target/textra.png", "-size", "64", "64", "-autoframe"],
+      "args": ["msdf", "-font", "${input:font}", "${input:char}", "-o", "${workspaceFolder}/target/glyphux.png", "-size", "64", "64", "-autoframe"],
       "cwd": "${workspaceFolder}"
     },
     {
-      "name": "textra: unit tests",
+      "name": "glyphux: unit tests",
       "type": "lldb",
       "request": "launch",
       "cargo": {
-        "args": ["test", "--no-run", "-p", "textra", "--lib"],
-        "filter": { "name": "textra", "kind": "lib" }
+        "args": ["test", "--no-run", "-p", "glyphux", "--lib"],
+        "filter": { "name": "glyphux", "kind": "lib" }
       },
       "cwd": "${workspaceFolder}"
     },
@@ -60,11 +60,11 @@
       "cwd": "${workspaceFolder}"
     },
     {
-      "name": "textra-gpu: parity tests (incl. whole font)",
+      "name": "glyphux-gpu: parity tests (incl. whole font)",
       "type": "lldb",
       "request": "launch",
       "cargo": {
-        "args": ["test", "--no-run", "-p", "textra-gpu", "--test", "parity"],
+        "args": ["test", "--no-run", "-p", "glyphux-gpu", "--test", "parity"],
         "filter": { "name": "parity", "kind": "test" }
       },
       "args": ["--include-ignored"],

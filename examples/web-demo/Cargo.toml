@@ -1,10 +1,10 @@
 [package]
-name = "textra-gpu-web-demo"
+name = "glyphux-gpu-web-demo"
 version = "0.1.0"
 edition = "2024"
 publish = false
 license = "MIT"
-description = "Browser (WebGPU) demo of textra-gpu: glyph fields generated on the GPU every frame as needed"
+description = "Browser (WebGPU) demo of glyphux-gpu: glyph fields generated on the GPU every frame as needed"
 
 [workspace]
 
@@ -12,7 +12,7 @@ description = "Browser (WebGPU) demo of textra-gpu: glyph fields generated on th
 crate-type = ["cdylib"]
 
 [dependencies]
-textra-gpu = { path = "../../crates/textra-gpu", default-features = false, features = ["demo"] }
+glyphux-gpu = { path = "../../crates/glyphux-gpu", default-features = false, features = ["demo"] }
 # WebGPU only: the generator is compute shaders, which WebGL 2 lacks.
 wgpu = { version = "30.0.1", default-features = false, features = ["std", "wgsl", "webgpu"] }
 wasm-bindgen = "0.2"

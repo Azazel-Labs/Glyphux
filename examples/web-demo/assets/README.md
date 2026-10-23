@@ -5,7 +5,7 @@ Fonts for the demos, all under licenses that allow redistribution:
 * `Twemoji-Subset.ttf`: Twemoji Mozilla robot. Font code by Mozilla, Apache 2.0;
   artwork by the Twemoji project, CC BY 4.0 (`Twemoji-LICENSE.md`). Embedded for the
   ten-color robot. Both color fonts are subsets from the prototype bundle used by
-  Textra's tests; see `../../../crates/textra/tests/assets/README.md` for provenance
+  Glyphux's tests; see `../../../crates/glyphux/tests/assets/README.md` for provenance
   and reproduction. The artwork is unchanged.
 
 * `Inter-Regular.otf`: [Inter](https://github.com/rsms/inter) 4.1, SIL Open Font License 1.1

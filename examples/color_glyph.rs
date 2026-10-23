@@ -1,9 +1,9 @@
 //! Render a shaped COLR glyph using the CPU decoder or the GPU color pipeline.
 //! usage: color_glyph <font.ttf> <text> [output.png] [size] [cpu|gpu]
+use glyphux::color::{ColorField, ColorFieldConfig};
+use glyphux_gpu::color::{ColorGlyphInstance, ColorRenderer};
+use glyphux_gpu::{GlyphKey, Shaper, ShapingFont, default_device, read_texture_layer, wgpu};
 use std::sync::Arc;
-use textra::color::{ColorField, ColorFieldConfig};
-use textra_gpu::color::{ColorGlyphInstance, ColorRenderer};
-use textra_gpu::{GlyphKey, Shaper, ShapingFont, default_device, read_texture_layer, wgpu};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args().collect();
@@ -35,13 +35,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // Encode a conventional straight-alpha PNG from premultiplied linear output.
                 let srgb = |v: f32| {
                     let v = if c[3] > 0.0 { v / c[3] } else { 0.0 };
-                    textra::float_to_byte(if v <= 0.0031308 {
+                    glyphux::float_to_byte(if v <= 0.0031308 {
                         12.92 * v
                     } else {
                         1.055 * v.powf(1.0 / 2.4) - 0.055
                     })
                 };
-                [srgb(c[0]), srgb(c[1]), srgb(c[2]), textra::float_to_byte(c[3])]
+                [srgb(c[0]), srgb(c[1]), srgb(c[2]), glyphux::float_to_byte(c[3])]
             })
             .collect::<Vec<_>>()
     } else if mode == "gpu" {
@@ -104,7 +104,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("mode must be cpu or gpu".into());
     };
     let path = args.get(3).map_or("color-glyph.png", String::as_str);
-    std::fs::write(path, textra::io::png::encode_png(size, size, 4, &pixels))?;
+    std::fs::write(path, glyphux::io::png::encode_png(size, size, 4, &pixels))?;
     println!(
         "{path}: {} paints, {} recipes, {}x{} tiles, {} atlas bytes",
         field.paints().len(),
