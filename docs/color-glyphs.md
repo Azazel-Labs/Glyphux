@@ -1,7 +1,7 @@
 # Color glyphs
 
 Textra supports the local region-distance representation from the v0.16 color-glyph
-prototype. The CPU imports COLR artwork and compiles a `ColorField`. The GPU evaluates
+prototype. The CPU imports [COLR](https://learn.microsoft.com/en-us/typography/opentype/spec/colr) artwork and compiles a `ColorField`. The GPU evaluates
 its paints and recipes while drawing a glyph quad. The existing monochrome MSDF path
 continues to use `GlyphAtlas` and `TextRenderer`.
 
@@ -82,7 +82,7 @@ outer coverage remain separate. The interpolation convention follows the
 
 ## Supported scope and limits
 
-- COLRv0 solid layers and supported COLRv1 paint graphs, through Textra's existing
+- [COLRv0](https://learn.microsoft.com/en-us/typography/opentype/spec/colr#overview) solid layers and supported [COLRv1](https://learn.microsoft.com/en-us/typography/opentype/spec/colr#graphic-compositions) paint graphs, through Textra's existing
   `ttf-parser` dependency. Outline and paint transforms are distinct. Explicit
   foreground RGBA resolves font foreground-color references.
 - Affine transforms in imported artwork. Clip boxes are accepted only when they

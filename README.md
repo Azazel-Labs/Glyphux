@@ -1,16 +1,31 @@
 # Textra
 
 [![CI](https://github.com/Azazel-Labs/Textra/actions/workflows/ci.yml/badge.svg)](https://github.com/Azazel-Labs/Textra/actions/workflows/ci.yml)
-· [Live web demo](https://azazel-labs.github.io/Textra/) (WebGPU)
+· [Live web demo](https://azazel-labs.github.io/Textra/) ([WebGPU](https://www.w3.org/TR/webgpu/))
 
-A pure Rust generator of signed distance fields for vector shapes and font glyphs:
-true SDF, pseudo-SDF, **multi-channel SDF (MSDF)** and **MSDF with the true SDF in alpha (MTSDF)**.
-It is based on Viktor Chlumský's multi-channel method ([msdfgen](https://github.com/Chlumsky/msdfgen)),
-and can also generate the fields on the GPU at run time and draw text with them.
+Textra builds on Viktor Chlumský's [msdfgen](https://github.com/Chlumsky/msdfgen) method:
+store distances to a shape's edges in a small texture, then use those distances to draw
+sharp text at different sizes. It began as a from-scratch Rust implementation and has
+grown into a text rendering system with GPU generation, worker threads and color emoji.
 
-It is a from-scratch reimplementation, not a port. It uses the same selection rules, so given
-the same colored shape its output matches msdfgen's bit for bit, but it searches faster,
-computes exact cubic distances, preprocesses outlines more robustly and has no C dependencies.
+- **Faster generation.** The CPU skips edges that cannot affect a pixel and splits work
+  across threads. Single-threaded MSDF/MTSDF generation is 3.2 to 3.9× faster than
+  msdfgen 1.13 in the [benchmarks below](#better--faster--stronger).
+- **Generate and draw as needed.** Native worker threads prepare missing glyphs; the
+  GPU generates their distance fields together and stores them on shared atlas pages.
+  Pages grow on demand up to a configurable limit. The renderer runs on native GPUs
+  and WebGPU; the web build currently does CPU preparation on the calling thread.
+- **More than basic Latin text.** Text shaping handles ligatures, joined scripts and
+  right-to-left text. Font loading supports variable fonts and CFF2 outlines, alongside
+  SVG shapes. The Rust implementation has no C dependencies.
+- **Color emoji from shapes and paints.** Supported
+  [COLRv0 and COLRv1](https://learn.microsoft.com/en-us/typography/opentype/spec/colr)
+  fonts become distance fields on shared color atlas pages, plus tables of solid colors
+  and gradients. The shader combines them while drawing, so emoji can move, rotate and
+  scale with the rest of the text. See [how color emoji work](#color-emoji).
+
+The generator supports true SDF, pseudo-SDF, **multi-channel SDF (MSDF)** and
+**MSDF with the true SDF in alpha (MTSDF)**, for both font glyphs and vector shapes.
 
 | Crate | What it is |
 |---|---|
@@ -31,11 +46,11 @@ textra msdf -font MyFont.ttf 'A' -o a.png -size 32 32 -pxrange 4 -autoframe
 
 A font stores each letter as an outline: lines and curves. To draw text fast, a GPU wants
 small textures, but a plain bitmap of a letter blurs or turns blocky when it is scaled up.
-A **signed distance field** stores something else in each texel: how far that point is from
+A **signed distance field** stores something else in each texture pixel (a texel): how far that point is from
 the outline, positive inside and negative outside. When text is drawn, the GPU blends
 between texels, which works smoothly for distances, and draws ink wherever the distance is
-above zero. The edge comes out sharp at any size, and outlines, glows and shadows come free:
-they are just other distance thresholds.
+above zero. This keeps edges sharp over a wide range of sizes. The same stored distances
+also let us draw outlines, glows and shadows by changing where ink starts or how it fades.
 
 One distance has a weakness: a texel near a sharp corner is equally close to both sides of
 it, so corners come out rounded. The **multi-channel** method stores three distances, to
@@ -47,8 +62,8 @@ The monochrome figures below are drawn from the generator's real output by
 
 ![The pipeline: shape text, look up glyphs, prepare missing glyphs on the CPU, generate them in one GPU batch, store them in the atlas, draw quads](docs/figures/pipeline.svg)
 
-The library runs in three tiers. Every frame, text is shaped into glyphs, and each glyph is
-looked up in the atlas, a texture cache of fields. A glyph that is already there is drawn
+Every frame, we turn the text into glyphs: the individual shapes a font draws. We then
+look up each glyph in the atlas, a set of texture pages holding fields we can reuse. A glyph that is already there is drawn
 right away. A missing glyph gets its place in the atlas immediately. Its outline is prepared
 on worker threads (steps 3 to 5), and the GPU generates every glyph missing in that frame in
 one batch (steps 6 to 8), so new text appears the frame it is first drawn.
@@ -63,7 +78,7 @@ so on. Two edges that meet at a sharp corner never share all their channels. Nea
 each channel therefore sees only one of the two sides, and the median of the three keeps the
 corner sharp.
 
-### Binning edges into tiles
+### Choosing which edges each tile needs
 
 ![The R's field divided into 8×8 texel tiles, each labeled with how many edges it must check](docs/figures/tiles.svg)
 
@@ -71,17 +86,17 @@ Finding the nearest edge for every texel by checking every edge is wasteful: mos
 far away. Before the GPU starts, the CPU splits the field into 8×8 texel tiles. For each tile
 it computes an upper bound on the nearest distance, and keeps only the edges that could get
 closer than that bound. The lists are sorted, so the GPU stops scanning as soon as no
-remaining edge can win. The culling is exact: an edge that could be the nearest anywhere in
-the tile is never dropped. Tiles far from the outline only need to know whether they are
+remaining edge can win. We only skip edges we can prove are too far away, so this does
+not change the result. Tiles far from the outline only need to know whether they are
 inside or outside.
 
 ### The field
 
 ![The R's multi-channel field, and each channel alone](docs/figures/field.svg)
 
-The compute shader evaluates the exact distance to each candidate: lines in closed form, and
-curves by solving for the nearest point on the curve, never by cutting them into short
-lines. Each channel on its own is a distorted R with bulging corners. Where two channels
+For each remaining edge, the GPU calculates the distance to its nearest point. It uses
+a direct formula for straight lines and solves for the nearest point on curves, rather
+than approximating curves with short straight lines. Each channel on its own is a distorted R with bulging corners. Where two channels
 agree, the median follows the true outline.
 
 ![A corner drawn from one channel and from the median of three](docs/figures/median.svg)
@@ -101,27 +116,26 @@ causing artifacts. On the GPU this is four more passes over the same batch.
 ### Inside a GPU batch
 
 All the glyphs that are new in a frame are generated together, in one set of buffers and one
-dispatch per pass. Each storage buffer is the concatenation of every glyph's part of it. A
-glyph's own record (binding 0) says where its parts start, so one shader invocation can find
-everything about its glyph from a glyph index alone.
+GPU launch per processing step. A buffer is a table of values the GPU can read or write.
+We place each glyph's entries after the previous glyph's entries in those tables. Another
+table, the glyph records at binding 0, stores each glyph's starting positions and counts.
+Given a glyph number, the GPU reads that record to find its edges, tiles and output space.
 
 ![The ten storage buffers of a three-glyph batch, split per glyph, with one glyph's offsets into each](docs/figures/batch.svg)
 
-- The CPU fills the solid buffers: the records, the work list, the outline (edges, contours,
-  and curve data for cubics and the sign-correction scanlines), and the tile binning
-  (candidate lists and their bounds). They go up through one staging buffer, copied inside the
-  command encoder. Uploads therefore land in order with the passes that read them, and a frame
-  may flush any number of batches before it submits.
-- The GPU writes the outlined buffers: the field (one `vec4` per texel) and the error
-  correction's per-texel flags.
-- Buffers persist from batch to batch and grow to the next power of two. Frames without new
-  glyphs allocate nothing; a flush with new glyphs creates only its staging buffer.
+- The CPU fills the solid boxes in the diagram: glyph records, a list of tiles to process,
+  outline data, and the edges each tile needs to check. It puts the upload in a temporary
+  buffer and records its copy before the GPU commands that read it.
+- The GPU writes the outlined boxes: four distance values per texture pixel (`vec4`),
+  plus flags marking pixels that may need error correction.
+- We reuse these working buffers between batches, enlarging them when necessary. Each
+  batch with new glyphs gets a temporary upload buffer; an empty batch needs no upload.
 
 ![How one invocation finds its tile's candidates, its edges, its texel and its place in the atlas](docs/figures/lookup.svg)
 
 The work list has one entry per tile of every glyph, `(glyph, tile)`. Each entry becomes one
-8×8 workgroup, and each invocation in it computes one texel. From the glyph record, the
-invocation finds:
+group of 64 GPU workers, with each worker computing one texture pixel. From the glyph
+record, each worker finds:
 1. its tile's group records: one per contour, with upper bounds on the distance per channel;
 2. the candidate edges of each group, sorted by a lower bound, so the scan stops once no
    remaining edge can be nearer;
@@ -136,13 +150,14 @@ A flush runs these passes in order:
 1. the upload;
 2. the distance pass;
 3. four error correction passes, when error correction is on. They share the field and a
-   per-texel stencil of flags: protect the corner texels, protect texels at edges, flag
-   artifacts, then flatten the flagged texels to their median.
+   table of flags, one entry per texture pixel: protect corners, protect edges, mark
+   errors, then replace the marked pixels' three distances with their middle value.
 4. the store into the atlas.
 
-The bindings form two bind groups, distance and error correction, so neither exceeds WebGPU's
-limit of 8 storage buffers per pass. Drawing text is separate and runs every frame: an
-instanced quad per glyph samples the atlas, whether or not anything was generated.
+We give the distance and error-correction steps different sets of buffers, called bind
+groups, so each stays within WebGPU's limit of eight storage buffers per pass. Drawing
+text is separate: every frame, we draw a rectangle for each glyph and read its distances
+from the atlas, whether those distances were just generated or already cached.
 
 ### The atlas
 
@@ -163,8 +178,8 @@ field with a wider distance range, so effects never clip.
 
 Characters are not glyphs. [HarfRust](https://github.com/harfbuzz/harfrust), the HarfBuzz
 project's Rust port, turns a line of text into positioned glyphs. It joins letters,
-substitutes ligatures and contextual forms, positions marks and applies kerning. The Unicode
-bidi algorithm first puts right-to-left runs into screen order. Each glyph then becomes one
+substitutes ligatures and contextual forms, positions marks and applies kerning. The
+[Unicode bidi algorithm](https://www.unicode.org/reports/tr9/) first puts right-to-left runs into screen order. Each glyph then becomes one
 textured quad. Its shader takes the median of the three channels and anti-aliases the edge
 in screen space, and it can add weight, outlines, glows and soft shadows from the same
 field.
@@ -291,14 +306,13 @@ std::fs::write("atlas.json", layout::to_json(&font, &atlas.layout, &config))?;
 
 ## GPU generation (`textra-gpu`)
 
-For apps that generate glyph fields at run time (see [How it works](#how-it-works)). The
-CPU bins each glyph's edges into 8×8 tiles with exact culling bounds, and WGSL compute passes
-evaluate every texel of all the glyphs requested in a frame in one batch. textra's selection
-rules, overlapping contour combiner and error correction are all included, and the output
-matches the CPU's to about 3·10⁻⁶, apart from exact ties. `GlyphAtlas` caches glyphs in a
-texture array at power-of-two levels chosen from the displayed size, and `TextRenderer`
-draws them. See [its README](crates/textra-gpu/README.md) and the
-[web demo](examples/web-demo).
+For apps that generate glyph fields while running (see [How it works](#how-it-works)).
+The CPU splits each field into 8×8 tiles and lists the edges each tile needs to check.
+The GPU calculates distances for all newly requested glyphs together, then corrects
+errors and writes the results into the atlas. Its output matches the CPU's to about
+3·10⁻⁶, apart from ties where two edges are equally close. `GlyphAtlas` keeps fields
+at resolutions suited to the displayed text size; `TextRenderer` draws them. See
+[its README](crates/textra-gpu/README.md) and the [web demo](examples/web-demo).
 
 ```
 cargo run --release --bin text_demo -- examples/web-demo/assets/Inter-Regular.otf
@@ -308,35 +322,46 @@ cargo run --release --bin text_demo -- examples/web-demo/assets/Inter-Regular.ot
 
 ### Color emoji
 
-COLRv0 solid layers and supported COLRv1 gradients can be compiled into local
-region-distance fields with analytic paint recipes. `textra::color::ColorField`
-provides CPU compilation and decoding; `textra_gpu::color::ColorRenderer` draws them
-with at most one filtered RGBA lookup per pixel. More than four local recipes is an
-explicit compilation error. See [color glyph support and examples](docs/color-glyphs.md)
-for supported paints, shaping, GPU integration and limits.
+A color font can describe an emoji as several shapes, each filled with a solid color
+or a gradient. We read supported [OpenType COLR](https://learn.microsoft.com/en-us/typography/opentype/spec/colr) fonts and keep two kinds of data:
+distances that describe the shapes' boundaries, and tables that describe their colors.
+`textra::color::ColorField` builds this data on the CPU;
+`textra_gpu::color::ColorRenderer` reads it to draw the emoji.
 
 ![Actual Twemoji robot output, its local tile grid, and the packed RGB and individual distance channels](docs/figures/color-prepare.svg)
 
-The CPU compiles visible layer stacks into paint recipes and packs their boundaries
-into local distance tiles. Colors remain in paint data; the atlas channels store
-distances. The fourth local recipe can use residual weight, while alpha tracks the
-outer silhouette independently.
+Where shapes overlap, a visible region may need several paints. For example, the fire
+can have a translucent yellow gradient over an orange shape. We store the ordered list
+of paints needed for that region and call it a **recipe**.
+
+Each tile has a record with up to four recipe numbers. Its R, G and B texture channels
+store distances to three regions, not colors or recipe numbers. At a boundary, those
+distances tell us how much each region contributes to the pixel. A fourth region can
+take the share left over. The alpha channel stores the distance to the emoji's outer
+edge, so internal color boundaries do not punch holes in the shape. If no allowed
+tile grid fits the four-recipe limit, compilation returns an error.
 
 ![Actual GPU readback of three color glyphs sharing one atlas page, with a second page still unallocated](docs/figures/color-atlas.svg)
 
-`ColorRenderer` packs these glyph-local distance payloads into shared 1024 × 1024
-GPU pages. Pages are allocated as needed, capped at six by default. Tile origins are
-offset into the chosen page, with filtering gutters preserved. Paints and recipes
-remain in per-glyph buffers. Removing a glyph frees its rectangle; a full color atlas
-returns an error without evicting existing glyphs. The monochrome atlas is a separate
-pool with its own six-page default cap and eviction of pages unused in the current frame.
+`ColorRenderer` packs each glyph's distance image into a free rectangle on a shared
+1024 × 1024 texture page. It updates the tile records with their new positions and
+keeps the extra border pixels that prevent filtering from reading a neighboring patch.
+The paint and recipe tables stay in separate buffers. Pages are created when needed,
+up to six by default. Removing a glyph frees its rectangle. If there is no room left,
+the color atlas returns an error and keeps existing glyphs intact. The monochrome
+atlas has its own six-page default cap and can reuse a page unused in the current frame.
 
 ![Fire, grinning face and robot decoded at three sizes, followed by the per-pixel rendering steps](docs/figures/color-render.svg)
 
-At draw time, the decoder evaluates each recipe's paints, blends recipes using local
-region weights, and applies outer coverage once. The examples above come from Textra's
-CPU reference renderer, using the same compiled fields consumed by the GPU renderer.
-Atlas images and tile counts are extracted directly from those fields.
+To draw a pixel, we find its tile and read the recipe numbers. Near a region boundary,
+one filtered RGBA texture lookup gives us the distances used to mix those recipes.
+We calculate each paint's color at that position, combine the paints in their stored
+order, then use the outer-edge distance to fade pixels along the silhouette. Empty
+tiles and tiles fully inside one region need no filtered texture lookup.
+
+The GPU README walks through [the paint tables and a radial-gradient lookup](crates/textra-gpu/README.md#color-fonts-and-shared-atlas-pages).
+See [color glyph support and examples](docs/color-glyphs.md) for supported paints and limits.
+The images above use the CPU renderer and actual GPU atlas data.
 
 Regenerate the three color SVG figures with
 `cargo run --release --bin figures -- docs/figures --color`.

@@ -3,7 +3,7 @@
 GPU generation of SDF / PSDF / MSDF / MTSDF glyph fields with [wgpu](https://wgpu.rs) 30
 (WGSL compute), for apps that want distance fields generated at run time instead of baking
 atlases: a glyph cache that picks the field resolution from the size text is drawn at, and an
-MSDF text renderer on top of it. Native (Vulkan, Metal, DX12, GL) and the web (WebGPU).
+MSDF text renderer on top of it. Native (Vulkan, Metal, DX12, GL) and the web ([WebGPU](https://www.w3.org/TR/webgpu/)).
 
 The fields are the ones [`textra`](../textra) makes on the CPU, not an approximation of them:
 the same edge selection, the same overlapping contour combiner and the same error
@@ -16,18 +16,18 @@ values, see [Validation](#validation).
 
 The workspace [README](../../README.md#how-it-works) walks through the pipeline with figures
 drawn from real output, including [the buffers of a batch](../../README.md#inside-a-gpu-batch)
-and the passes over them. In short:
+and the steps that read and write them:
 
 ![The pipeline](../../docs/figures/pipeline.svg)
 
 | Where | Step |
 |---|---|
-| CPU, once per glyph | Shape → normalize → orient → color edges; `PreparedShape` → `GpuShape` (edges, contours, cubic interval data); `bin_tiles`: for each 8×8 tile and contour, exact upper bounds of the nearest distance per channel and every edge that can beat them, sorted by a lower bound; corner texels and error correction parameters. |
-| GPU fine pass | One 8×8 workgroup per tile of each glyph. Per texel: the nearest edge per channel from the tile's sorted candidates (with early exit), corner perpendiculars, pseudo-distance, and the overlapping contour combiner (up to 64 contours). |
-| GPU narrow band | Far tiles only get their sign (from the exact winding number); the rest of the tile is filled in. |
-| GPU error correction | Protect corners → protect edges → find artifacts (with exact distance checks at edges) → apply: msdfgen's error correction. |
-| GPU atlas store | Field → texture array layer, clamped. |
-| Render | Instanced quads, median and screen-space anti-aliasing. |
+| CPU, once per glyph | Read the outline, assign its edges to color channels, and split the output into 8×8 tiles. For each tile, list the edges that could be closest to any of its pixels. Upload those lists and the outline data. |
+| GPU distance calculation | For each texture pixel, find the nearest edge for each channel. Account for corners and overlapping outlines when calculating the stored distances. |
+| GPU shortcut for distant tiles | Tiles far from the outline only need an inside/outside check. Fill them without calculating every pixel's distance. |
+| GPU error correction | Protect pixels needed to preserve corners and edges, then find and fix combinations of channel values that would draw incorrectly. |
+| GPU atlas store | Copy the distances into the glyph's rectangle on a texture page, limiting values to the range the texture can store. |
+| Render | Draw a rectangle for each glyph. Read its three distances, take the middle value, and use it to smooth the edge at the displayed size. |
 
 * **Exact tile culling.** For each tile the CPU computes, per channel, an upper bound of the
   nearest distance over the tile (from edge end and mid points) and keeps only edges whose
@@ -57,36 +57,65 @@ Compared to the projects reviewed for the design:
 
 ## Color fonts and shared atlas pages
 
-Color fonts use `textra::color::ColorField` and `textra_gpu::color::ColorRenderer`.
-The CPU imports supported COLR layers, compiles visible paint stacks into recipes,
-and builds local region-distance tiles. The GPU reconstructs their colors while
-drawing. This is a separate decoding path from the monochrome MSDF compute pipeline above.
+Color fonts describe an emoji as shapes filled with solid colors or gradients. We read
+the supported [COLR](https://learn.microsoft.com/en-us/typography/opentype/spec/colr) shapes on the CPU, work out which paints remain visible, and build
+distance fields for their boundaries. `ColorField` holds that result;
+`ColorRenderer` uploads it and draws it. The monochrome pipeline above generates
+fields on the GPU; this color pipeline currently builds them on the CPU.
 
 ![Compile a color glyph into local distance patches and paint recipes](../../docs/figures/color-prepare.svg)
 
-The small packed image in that figure is a **glyph-local upload payload**, not a
-dedicated GPU texture. `ColorRenderer::upload` reserves a rectangle in an existing
-shared page, copies the payload there, and offsets its tile origins to that rectangle.
-The compiler's patch gutters travel with it, keeping filtered reads within the correct
-local channel mapping. RGB holds three explicit recipe distances, alpha holds the
-outer union distance, and an optional fourth recipe uses residual weight.
+The small packed image in the figure contains one glyph's distance data before upload.
+We reserve a rectangle for it on a shared GPU page, copy it there, and add the rectangle's
+position to every tile's stored texture position. Each patch includes a one-pixel border
+(a gutter), so filtering its edge still reads values with the same channel meanings.
+
+Here is what we put in the GPU's texture and tables:
+
+| Storage | What it contains | How we use it |
+|---|---|---|
+| Atlas texture | Four 8-bit distance values per texel, read as numbers from 0 to 1 | R, G and B describe three local regions. Alpha describes the outer silhouette. |
+| `tiles` buffer | Each tile's texture position, tile type, and four 32-bit recipe indices in `ids.xyzw` | Find the distance patch and the recipes assigned to its channels. |
+| `recipes` buffer | A starting position and count for each recipe, followed by lists of 32-bit paint indices | Read the paints needed for one region, in back-to-front order. |
+| `paints` buffer | One record per paint: its type, color or gradient geometry, coordinate transform, and stop-list location | Calculate that paint's color at the pixel being drawn. |
+| `stops` buffer | Gradient positions and their RGBA colors | Find the two stops around the pixel's gradient position and blend between them. |
+
+A **recipe** is just an ordered list of paints. An opaque paint hides earlier paints;
+a translucent paint keeps some of the color underneath. One tile can refer to four
+recipes even though RGB holds only three distances: the fourth recipe gets any share
+left after the first three. We then scale those shares so their sum is one.
+
+For a radial gradient, we put its center and inner and outer radii in a paint record's
+`geometry` values. `header.x = 2` marks it as radial; `header.z` and `header.w` give
+the first stop and the number of stops in the `stops` table. The paint also stores the
+transform that converts the pixel position into the gradient's coordinate system.
+
+For example, suppose a tile's `ids.x` is 7. That means its R channel belongs to recipe
+7. We read that recipe's list of paint indices. If one is 12, we read `paints[12]`.
+If it is radial, we measure the pixel's distance from its center, map that distance
+between the stored radii, and blend the corresponding gradient stops. These table
+references are **32-bit indices**. The texture's R channel is an **8-bit distance**;
+it does not hold the gradient number.
+
+The exact layouts and reads are in [`color.wgsl`](src/shaders/color.wgsl).
 
 ![GPU readback of fire, grinning face and robot sharing one color atlas page](../../docs/figures/color-atlas.svg)
 
-Both atlas pools allocate pages on demand, with independent caps:
+We keep separate pages for monochrome and color glyphs. Both grow on demand, with separate limits:
 
 | | Monochrome `GlyphAtlas` | Color `ColorRenderer` |
 |---|---|---|
 | Default limit | Six 1024 × 1024 pages | Six 1024 × 1024 pages |
 | Configuration | `AtlasConfig::size`, `layers` | `ColorAtlasConfig::page_size`, `max_pages` |
 | Allocation | `flush` grows a texture array and copies existing pages | `upload` creates another fixed-size page only when existing pages cannot fit |
-| At the cap | Recycle the least recently used page unused this frame; otherwise placement may fail | Return an error; preserve resident glyphs and any previous upload under the same key |
-| Reclamation | Whole-page recycling | `remove` frees a rectangle and merges adjacent free space; `clear` releases all pages |
+| At the cap | Recycle the least recently used page unused this frame; otherwise placement may fail | Return an error; keep existing glyphs, including the old version if replacing one |
+| Freeing space | Reuse a whole page | `remove` frees a rectangle and merges adjacent free space; `clear` releases all pages |
 
-Color allocation does not automatically compact or evict. An upload must fit on one
-page; fragmented free space can also prevent placement. Empty allocated color pages
-are retained until `clear`. `page_count()`, `page_texture()` and `glyph_page(key)` expose
-the actual shared storage for diagnostics. The demo's atlas toggle displays occupied
+The color atlas does not move existing rectangles around or automatically discard
+glyphs to make room. A glyph's distance image must fit in one free rectangle on one
+page; several small gaps cannot hold a larger image. Empty color pages stay allocated
+until `clear`. Use `page_count()`, `page_texture()` and `glyph_page(key)` to inspect
+how many pages exist and where a glyph was placed. The demo's atlas toggle displays occupied
 color pages once each, alongside the live monochrome pages.
 
 ```rust
@@ -102,19 +131,27 @@ colors.upload(&device, &queue, key, &compiled_field)?;
 
 ![Decode local distances, evaluate paints and apply coverage](../../docs/figures/color-render.svg)
 
-The shader finds the glyph-local tile from its quad coordinates. Empty tiles return
-transparent; interior tiles evaluate one recipe without sampling the atlas. Boundary
-tiles fetch one bilinear RGBA value from the shared page, form normalized recipe weights,
-evaluate solid or supported gradient paints, and apply outer coverage once. The result
-uses premultiplied source-over blending. Paint and recipe buffers add work beyond that
-one filtered lookup.
+For each screen pixel, the shader uses its position within the glyph to find the tile.
+An empty tile draws nothing. A tile entirely inside one region reads that region's
+paint list directly. At a boundary, the shader samples RGBA from the page once, with
+bilinear filtering: the GPU blends the four neighboring texels. The three region
+distances tell us how much of each recipe to use at this pixel.
 
-Color and monochrome instances share the scene's placement and animation transforms.
-Submit ordered runs through `TextRenderer::render_range` and
-`ColorRenderer::render_range` to preserve overlap order. Shared color texture storage
-does not yet imply batched draws: each color glyph still has its own paint buffers and
-bind group, with one draw per instance. Monochrome glow, weight and outline effects
-do not apply to the color pipeline. See [color font support and limits](../../docs/color-glyphs.md).
+We calculate the paint colors and combine each recipe's layers from back to front.
+Then we mix the recipes using their shares and multiply the result by outer-edge
+coverage: how much of the pixel lies inside the emoji. Color values are kept multiplied
+by opacity throughout this calculation (premultiplied alpha). We draw that result over
+the background, letting the background show through the transparent portion.
+The one filtered texture lookup is only part of the work; the shader also reads the
+tile, recipe, paint and stop tables.
+
+Color and monochrome glyphs use the same position, scale and rotation from the scene.
+When they overlap, draw them in the intended order using `TextRenderer::render_range`
+and `ColorRenderer::render_range`. Each color glyph still has its own paint buffers
+and bind group, the set of resources passed to the shader. It takes one draw call per
+color instance even when several share a texture page. The monochrome glow, weight
+and outline effects do not apply to this color renderer. See
+[color font support and limits](../../docs/color-glyphs.md).
 
 The color figures are generated from real fields and GPU readback by
 [`examples/figures_color.rs`](../../examples/figures_color.rs). Regenerate them with
@@ -171,7 +208,7 @@ queue.submit([encoder.finish()]);
   `probes_per_flush` at a time on `wasm32`. A glyph is generated at its size level right
   away and regenerated once if its probe asks for more (6 of 154 glyphs in the shaping demo,
   none in Inter's ASCII). Off with `detail_probe: false`.
-* **Cache.** Shelf packing per layer of a texture array. `AtlasConfig::layers` is the page
+* **Cache.** We pack glyph rectangles in rows on each texture page. `AtlasConfig::layers` is the page
   cap (six by default), not an upfront allocation. `flush` grows the array as needed and
   copies existing pages before writing new glyphs. Acquire custom views and bind groups
   after flushing; `TextRenderer::prepare` automatically rebinds a grown atlas. Before the
@@ -179,16 +216,19 @@ queue.submit([encoder.finish()]);
   placements; `allocated_page_count()` reports full GPU pages. At the cap, the least recently used
   layer not used in the current frame is recycled. `texel_budget` caps the generation per
   flush (requests over it reuse another cached level of the glyph and are generated later).
-* **Placement.** `AtlasGlyph` has the quad in em units (`plane_min/max`, y up) and texture
-  coordinates inset by half a texel, so bilinear filtering never touches a neighbor.
+* **Placement.** `AtlasGlyph` gives the rectangle to draw relative to the glyph's baseline
+  (`plane_min/max`, in em units with y pointing up). It also gives the matching rectangle
+  in the atlas. Those texture coordinates stop half a texel inside the stored image to
+  keep filtering from reading a neighboring glyph.
 * **Rendering.** `text.wgsl`: median of RGB, screen-space range from `fwidth`, blending
   towards the true distance (alpha of MTSDF) when minified below ~1 texel per pixel. Per quad
   (`GlyphInstance`): weight, outline, glow and soft drop shadow (from the true distance; the
   shadow's lookups stay inside the glyph's atlas rectangle), and a rotation about a pivot for
   text on paths (`with_weight`, `with_outline`, `with_glow`, `with_shadow`, `with_rotation`).
   `GlyphInstance::atlas_page` draws a whole atlas layer's raw field, for debugging views.
-* **Sign correction.** The overlapping contour combiner (msdfgen's) can give texels inside
-  overlapping or self-intersecting contours the wrong sign; variable fonts are full of them.
+* **Sign correction.** A positive distance means inside the shape; a negative one means
+  outside. Combining overlapping or self-crossing outlines can sometimes give a pixel
+  the wrong sign, particularly in variable fonts.
   As msdfgen's scanline pass (`GeneratorConfig::sign_correction` on the CPU), the CPU lists
   each texel row's crossings with the outline and the fine pass flips distances whose sign
   disagrees with the exact winding number (`AtlasConfig::sign_correction`, non-zero by
@@ -206,10 +246,10 @@ queue.submit([encoder.finish()]);
 ### Shaping (`shaping` feature, on by default)
 
 [HarfRust](https://github.com/harfbuzz/harfrust), the HarfBuzz project's own Rust port,
-does the OpenType shaping: ligatures, GPOS kerning and mark placement, contextual forms,
+does the OpenType shaping: ligatures, [GPOS](https://learn.microsoft.com/en-us/typography/opentype/spec/gpos) kerning and mark placement, contextual forms,
 Indic reordering and conjuncts, Arabic joining, Thai marks, variable font instances and any
 feature you list (`shaper.features = vec!["smcp".parse()?, "-liga".parse()?]`). Around it,
-`Shaper::shape_line` runs the Unicode bidi algorithm ([unicode-bidi](https://github.com/servo/unicode-bidi))
+`Shaper::shape_line` runs the [Unicode bidi algorithm](https://www.unicode.org/reports/tr9/) ([unicode-bidi](https://github.com/servo/unicode-bidi))
 to get visual runs, splits them by script, and shapes each piece with its direction and
 script and the rest of the line as context. Glyph outlines come from the same file through
 textra's loader, so the shaper's glyph ids index the atlas directly.
@@ -268,7 +308,9 @@ if let (Some(p), Some(r)) = (prof.as_mut(), readback) { p.submitted(r); }
 for (pass, ms) in prof.as_mut().unwrap().latest() { println!("{pass}: {ms:.3} ms"); }
 ```
 
-The demo scene (native and web) shows these timings in its top-right corner.
+The native demo can show these GPU timings. The web demo instead uses
+`performance.now()` to measure CPU frame preparation and submission; that number
+does not measure GPU execution time.
 
 ### Raw field generation
 
