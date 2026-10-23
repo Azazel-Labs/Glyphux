@@ -194,7 +194,6 @@ jobs:
 
   cli-binaries:
     name: Offline CLI (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
     needs: [release]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     permissions:
