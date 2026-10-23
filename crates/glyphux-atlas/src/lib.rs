@@ -245,7 +245,7 @@ impl FontGeometry {
             kerning_incomplete = class_based && glyphs.len() > CLASS_KERNING_LIMIT;
             let mut slot = std::collections::HashMap::new();
             for (i, g) in glyphs.iter().enumerate() {
-                slot.entry(g.glyph_index).or_insert(i);
+                slot.entry(g.glyph_index).or_insert_with(Vec::new).push(i);
             }
             if class_based && !kerning_incomplete {
                 // Class-based subtables can only be queried per pair.
@@ -262,12 +262,13 @@ impl FontGeometry {
                 });
                 kerning = found.into_iter().flatten().collect();
             } else {
-                // Format-0 pairs: first listed value for a pair wins (as in a lookup).
-                let mut seen = std::collections::HashSet::new();
+                // Include every character alias that maps to the same glyph.
                 for (l, r, v) in pairs {
-                    if let (Some(&i), Some(&j)) = (slot.get(&l), slot.get(&r)) {
-                        if seen.insert((i, j)) {
-                            kerning.push((i, j, v * opts.font_scale));
+                    if let (Some(left), Some(right)) = (slot.get(&l), slot.get(&r)) {
+                        for &i in left {
+                            for &j in right {
+                                kerning.push((i, j, v * opts.font_scale));
+                            }
                         }
                     }
                 }

@@ -201,6 +201,19 @@ textured quad. Its shader takes the median of the three channels and anti-aliase
 in screen space, and it can add weight, outlines, glows and soft shadows from the same
 field.
 
+`Shaper` enables GPOS kerning and standard shaping features by default, including for
+TrueType variable fonts. Set `shaper.features = vec!["-kern".parse()?]` to disable
+kerning, or `shaper.language = Some("tr".parse()?)` to select a language system.
+Feature ranges refer to UTF-8 byte offsets in the original line, across script and
+bidirectional runs.
+
+The low-level `Font::kerning`, `layout_line`, and static atlas kerning export use
+legacy `kern` tables only. They combine additive and override pairs and support
+class-based pairs, but do not flatten GPOS, contextual positioning, or mark placement
+into a pair list. Use `Shaper::shape_line` followed by `layout_shaped` for modern text.
+Automatic font fallback, line wrapping, and vertical text layout are not provided by
+this single-line shaping API.
+
 ## Better / faster / stronger
 
 **Faster:** 3.2 to 3.9× faster than msdfgen 1.13 single-threaded for MSDF/MTSDF, more with threads:

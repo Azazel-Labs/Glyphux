@@ -5,6 +5,8 @@ use crate::edge::Edge;
 use crate::math::Vec2;
 use crate::shape::{Contour, Shape};
 
+mod kerning;
+
 /// The font parser, for what this module doesn't wrap (names, tables…) through
 /// [`Font::face`]. Its types are part of this crate's API: a new major version of
 /// `ttf-parser` is a breaking change here too.
@@ -164,46 +166,60 @@ impl<'a> Font<'a> {
         })
     }
 
-    /// All kerning pairs listed in format-0 `kern` subtables as `(left, right, adjustment)`,
-    /// plus a flag telling whether other (class-based) subtables exist, for which
-    /// [`Self::kerning`] must be queried per pair.
+    /// Combined, nonzero format-0 `kern` pairs as `(left, right, adjustment)`.
+    /// The flag indicates class-based subtables: query [`Self::kerning`] per pair to
+    /// include those too. Vertical, cross-stream, minimum-distance, variable and
+    /// contextual subtables are excluded. This is not OpenType GPOS shaping.
     pub fn kerning_pairs(&self) -> (Vec<(u16, u16, f64)>, bool) {
-        let mut out = Vec::new();
+        let mut pairs = std::collections::BTreeMap::new();
         let mut other = false;
-        let Some(kern) = self.face.tables().kern else {
-            return (out, false);
-        };
-        for st in kern.subtables {
-            if !st.horizontal || st.variable {
-                continue;
-            }
-            match st.format {
+        for (format, replace) in kerning::subtables(self.kern_data()) {
+            match format {
                 ttf_parser::kern::Format::Format0(f0) => {
                     for p in f0.pairs {
-                        if p.value != 0 {
-                            out.push((p.left().0, p.right().0, p.value as f64 * self.scale));
-                        }
+                        let value = pairs.entry((p.left().0, p.right().0)).or_insert(0.0);
+                        *value = if replace { 0.0 } else { *value } + f64::from(p.value);
                     }
                 }
                 _ => other = true,
             }
         }
+        let out = pairs
+            .into_iter()
+            .filter_map(|((l, r), v)| (v != 0.0).then_some((l, r, v * self.scale)))
+            .collect();
         (out, other)
     }
 
-    /// Kerning adjustment between two glyphs (from the `kern` table), in the selected scaling.
+    /// Horizontal advance adjustment from legacy `kern`, in the selected scaling.
+    /// Additive and override subtables are combined in order. This excludes cross-stream,
+    /// minimum-distance, variable and contextual kerning. Use a text shaper for GPOS
+    /// kerning, language-specific positioning, ligatures and combining marks.
     pub fn kerning(&self, left: u16, right: u16) -> f64 {
-        let Some(kern) = self.face.tables().kern else {
-            return 0.0;
-        };
-        for st in kern.subtables {
-            if st.horizontal && !st.variable {
-                if let Some(v) = st.glyphs_kerning(ttf_parser::GlyphId(left), ttf_parser::GlyphId(right)) {
-                    return v as f64 * self.scale;
-                }
+        let mut value = 0.0;
+        for (format, replace) in kerning::subtables(self.kern_data()) {
+            let l = ttf_parser::GlyphId(left);
+            let r = ttf_parser::GlyphId(right);
+            // Format1 has different fields when another dependency enables apple-layout.
+            #[allow(clippy::match_wildcard_for_single_variants)]
+            let adjustment = match format {
+                ttf_parser::kern::Format::Format0(st) => st.glyphs_kerning(l, r),
+                ttf_parser::kern::Format::Format2(st) => st.glyphs_kerning(l, r),
+                ttf_parser::kern::Format::Format3(st) => st.glyphs_kerning(l, r),
+                _ => None,
+            };
+            if let Some(v) = adjustment {
+                value = if replace { 0.0 } else { value } + f64::from(v);
             }
         }
-        0.0
+        value * self.scale
+    }
+
+    fn kern_data(&self) -> &[u8] {
+        self.face
+            .raw_face()
+            .table(ttf_parser::Tag::from_bytes(b"kern"))
+            .unwrap_or(&[])
     }
 }
 

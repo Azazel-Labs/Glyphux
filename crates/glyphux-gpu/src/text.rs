@@ -477,6 +477,8 @@ pub struct FontRef<'a> {
 /// Lays out one line of text (character map + `kern` table; no shaping) with its baseline
 /// starting at `origin` (logical pixels, y down), requesting glyphs from the atlas. Appends
 /// the quads to `out` and returns the pen position after the last glyph (logical pixels).
+/// For GPOS kerning, ligatures and mark positioning, use `Shaper::shape_line` and
+/// `layout_shaped` with the `shaping` feature instead.
 pub fn layout_line(
     atlas: &mut GlyphAtlas,
     font: &FontRef<'_>,

@@ -153,8 +153,12 @@ pub struct Shaper {
     plans: Vec<(u32, ShapePlan)>,
     /// OpenType features for every run, e.g. `"smcp".parse()`, `"-liga".parse()`,
     /// `"ss01=1".parse()`. Defaults (kerning, ligatures, marks, contextual forms…) apply
-    /// without listing them.
+    /// without listing them. Ranges use UTF-8 byte offsets in the original line,
+    /// including when it is split into script or bidi runs.
     pub features: Vec<Feature>,
+    /// Language for language-specific substitutions and positioning, e.g. `"tr".parse()`.
+    /// `None` uses the font's default language system.
+    pub language: Option<harfrust::Language>,
     /// Paragraph direction: `None` detects it from the first strong character.
     pub base_rtl: Option<bool>,
 }
@@ -172,6 +176,7 @@ impl Shaper {
             probe: Some(Buffer::new()),
             plans: Vec::new(),
             features: Vec::new(),
+            language: None,
             base_rtl: None,
         }
     }
@@ -194,7 +199,9 @@ impl Shaper {
     /// Index in `self.plans` of the plan for `font` and the buffer's properties, compiled on
     /// first use.
     fn plan(&mut self, font: &ShapingFont, buf: &Buffer) -> usize {
-        let key = ShapePlanKey::new(&font.instance, buf.script(), buf.direction()).features(&self.features);
+        let key = ShapePlanKey::new(&font.instance, buf.script(), buf.direction())
+            .language(buf.language())
+            .features(&self.features);
         let found = self.plans.iter().rposition(|(id, p)| *id == font.id && key.matches(p));
         let plan = if let Some(i) = found {
             self.plans.remove(i)
@@ -202,7 +209,13 @@ impl Shaper {
             if self.plans.len() >= PLAN_CACHE {
                 self.plans.remove(0);
             }
-            let plan = ShapePlan::new(&font.instance, buf.direction(), buf.script(), None, &self.features);
+            let plan = ShapePlan::new(
+                &font.instance,
+                buf.direction(),
+                buf.script(),
+                buf.language(),
+                &self.features,
+            );
             (font.id, plan)
         };
         self.plans.push(plan);
@@ -260,7 +273,9 @@ impl Shaper {
             for (a, b, script) in pieces {
                 let mut buf = self.buffer.take().unwrap_or_default();
                 buf.clear();
-                buf.push_str(&text[a..b]);
+                for (offset, c) in text[a..b].char_indices() {
+                    buf.push(c as u32, (a + offset) as u32);
+                }
                 buf.set_pre_context(&text[..a]);
                 buf.set_post_context(&text[b..]);
                 buf.set_direction(if rtl {
@@ -269,6 +284,7 @@ impl Shaper {
                     Direction::LeftToRight
                 });
                 buf.set_script(script);
+                buf.set_language(self.language.clone());
                 let mut flags = BufferFlags::empty();
                 if a == 0 {
                     flags |= BufferFlags::BEGINNING_OF_TEXT;
@@ -285,7 +301,7 @@ impl Shaper {
                     for (info, pos) in buf.glyph_infos().iter().zip(buf.glyph_positions()) {
                         out.glyphs.push(ShapedGlyph {
                             glyph: info.glyph_id,
-                            cluster: info.cluster + a as u32,
+                            cluster: info.cluster,
                             x: pen + pos.x_offset as f32 * scale,
                             y: pos.y_offset as f32 * scale,
                             advance: pos.x_advance as f32 * scale,

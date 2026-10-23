@@ -58,3 +58,48 @@ fn has_glyph_and_metrics() {
     let m = latin.metrics();
     assert!(m.line_height > 1.0 && m.line_height < 1.5, "{m:?}");
 }
+
+#[test]
+fn true_type_gpos_kerning_is_enabled_and_can_be_disabled() {
+    let latin = font(0, "InterVariable-Latin.ttf");
+    let mut shaper = Shaper::new();
+    let kerned = shaper.shape_line(&latin, "AVATAR To");
+    shaper.features = vec!["-kern".parse().unwrap()];
+    let unkerned = shaper.shape_line(&latin, "AVATAR To");
+    assert!(kerned.width < unkerned.width);
+    assert_eq!(kerned.glyphs.len(), unkerned.glyphs.len());
+    shaper.features.clear();
+    assert_eq!(glyphs(&shaper.shape_line(&latin, "AVATAR To")), glyphs(&kerned));
+}
+
+#[test]
+fn feature_ranges_use_original_byte_offsets_across_runs() {
+    let latin = font(0, "Inter-Regular.otf");
+    // Hebrew forces a bidi run and uses multiple bytes per character. Even missing
+    // glyphs must not shift the feature range for the following Latin run.
+    let text = "א A->b";
+    let start = text.find('-').unwrap();
+    let mut shaper = Shaper::new();
+    let default = shaper.shape_line(&latin, text);
+    shaper.features = vec![format!("calt[{start}:{}]=0", text.len()).parse().unwrap()];
+    let ranged = shaper.shape_line(&latin, text);
+    shaper.features = vec!["-calt".parse().unwrap()];
+    assert_eq!(glyphs(&ranged), glyphs(&shaper.shape_line(&latin, text)));
+    assert_eq!(ranged.glyphs.len(), default.glyphs.len() + 1);
+    assert!(ranged.glyphs.iter().all(|g| text.is_char_boundary(g.cluster as usize)));
+}
+
+#[test]
+fn language_changes_reuse_only_compatible_plans() {
+    let latin = font(0, "Inter-Regular.otf");
+    let mut warm = Shaper::new();
+    for language in [Some("tr"), Some("en"), None, Some("tr")] {
+        warm.language = language.map(|s| s.parse().unwrap());
+        let mut fresh = Shaper::new();
+        fresh.language.clone_from(&warm.language);
+        assert_eq!(
+            glyphs(&warm.shape_line(&latin, "fi i")),
+            glyphs(&fresh.shape_line(&latin, "fi i"))
+        );
+    }
+}
