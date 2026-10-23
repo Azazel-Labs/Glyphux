@@ -5,7 +5,7 @@
 
 mod buffers;
 mod fields;
-pub use buffers::{ColorGpuData, ColorPaintData, ColorStopData, ColorTileData};
+pub use buffers::ColorBuffers;
 #[cfg(feature = "font")]
 mod font;
 

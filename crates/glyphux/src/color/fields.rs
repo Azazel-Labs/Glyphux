@@ -30,6 +30,32 @@ impl Default for ColorFieldConfig {
     }
 }
 
+impl ColorFieldConfig {
+    /// Validate quality settings independently of font loading or field compilation.
+    pub fn validate(&self) -> Result<(), ColorError> {
+        if !(16..=2048).contains(&self.resolution) {
+            return Err(ColorError::Invalid("resolution must be 16 to 2048"));
+        }
+        if !(8..=512).contains(&self.base_resolution) || !self.base_resolution.is_power_of_two() {
+            return Err(ColorError::Invalid(
+                "base resolution must be a power of two from 8 to 512",
+            ));
+        }
+        if !self.max_grid.is_power_of_two() || self.max_grid > self.base_resolution {
+            return Err(ColorError::Invalid(
+                "max grid must be a power of two no greater than base resolution",
+            ));
+        }
+        if self.min_pixels == 0 {
+            return Err(ColorError::Invalid("min pixels must be positive"));
+        }
+        if !self.range.is_finite() || self.range < 1.0 / f64::from(self.min_pixels) {
+            return Err(ColorError::Invalid("range must be finite and at least 1 / min pixels"));
+        }
+        Ok(())
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u32)]
 pub enum TileMode {
@@ -68,22 +94,14 @@ impl ColorField {
     pub fn build(glyph: &ColorGlyph, config: ColorFieldConfig) -> Result<Self, ColorError> {
         let h = config.resolution as usize;
         let b = config.base_resolution;
-        if !(16..=2048).contains(&h)
-            || !(8..=512).contains(&b)
-            || !b.is_power_of_two()
-            || config.max_grid == 0
-            || !config.max_grid.is_power_of_two()
-            || config.max_grid > b
-            || config.min_pixels < 1
-            || !config.range.is_finite()
-            || config.range < 1.0 / f64::from(config.min_pixels)
-            || !super::finite_point(glyph.plane_min)
+        config.validate()?;
+        if !super::finite_point(glyph.plane_min)
             || !super::finite_point(glyph.plane_max)
             || glyph.plane_max.x <= glyph.plane_min.x
             || glyph.plane_max.y <= glyph.plane_min.y
             || !glyph.advance.is_finite()
         {
-            return Err(ColorError::Invalid("field configuration or glyph bounds"));
+            return Err(ColorError::Invalid("glyph bounds or advance"));
         }
         for paint in &glyph.paints {
             paint.validate()?;

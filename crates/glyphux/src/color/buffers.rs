@@ -1,56 +1,59 @@
 //! Shader buffer layout shared by runtime uploads and offline color atlas baking.
-use super::{ColorField, Extend, Paint};
+use super::{ColorError, ColorField, Extend, Paint, premultiply};
 
-#[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
-#[cfg_attr(feature = "gpu", derive(bytemuck::Pod, bytemuck::Zeroable))]
-pub struct ColorTileData {
-    pub origin: [u32; 2],
-    pub mode: u32,
-    pub padding: u32,
-    pub ids: [u32; 4],
+struct ColorPaintData {
+    header: [u32; 4],
+    color: [f32; 4],
+    row0: [f32; 4],
+    row1: [f32; 4],
+    geometry: [f32; 4],
 }
-#[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
-#[cfg_attr(feature = "gpu", derive(bytemuck::Pod, bytemuck::Zeroable))]
-pub struct ColorPaintData {
-    pub header: [u32; 4],
-    pub color: [f32; 4],
-    pub row0: [f32; 4],
-    pub row1: [f32; 4],
-    pub geometry: [f32; 4],
-}
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default)]
-#[cfg_attr(feature = "gpu", derive(bytemuck::Pod, bytemuck::Zeroable))]
-pub struct ColorStopData {
-    pub color: [f32; 4],
-    pub offset: [f32; 4],
+struct ColorStopData {
+    color: [f32; 4],
+    offset: [f32; 4],
 }
 
-/// Per-glyph storage tables. IDs are local to these tables.
-#[derive(Clone, Debug)]
-pub struct ColorGpuData {
-    pub tiles: Vec<ColorTileData>,
-    pub paints: Vec<ColorPaintData>,
-    pub stops: Vec<ColorStopData>,
-    pub recipes: Vec<u32>,
+/// Named shader bindings. Storage tables contain glyph-local IDs; config is a uniform.
+/// Bytes produced by [`ColorField::encode`] are little-endian, ready for upload.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ColorBuffers<T> {
+    pub tiles: T,
+    pub paints: T,
+    pub stops: T,
+    pub recipes: T,
+    pub config: T,
+}
+
+impl<T> ColorBuffers<T> {
+    /// Visit storage bindings followed by the config uniform, with manifest names.
+    pub fn iter(&self) -> impl Iterator<Item = (&'static str, &T)> {
+        [
+            ("tiles", &self.tiles),
+            ("paints", &self.paints),
+            ("stops", &self.stops),
+            ("recipes", &self.recipes),
+            ("config", &self.config),
+        ]
+        .into_iter()
+    }
 }
 
 impl ColorField {
-    /// Encode the tables used by the color shader, before atlas relocation.
-    pub fn gpu_data(&self) -> ColorGpuData {
+    /// Encode all shader bindings for a patch placed at `origin` in an atlas page.
+    /// Tile coordinates become page-relative; recipe and paint IDs remain local.
+    /// Returns an error if the relocated patch exceeds the coordinate range.
+    pub fn encode(&self, origin: [u32; 2]) -> Result<ColorBuffers<Vec<u8>>, ColorError> {
+        for (offset, size) in origin.into_iter().zip(self.atlas_size()) {
+            offset
+                .checked_add(size)
+                .ok_or(ColorError::Invalid("atlas origin overflows coordinates"))?;
+        }
         let mut paints = Vec::new();
         let mut stops = Vec::new();
-        let premultiply = |c: [f32; 4]| [c[0] * c[3], c[1] * c[3], c[2] * c[3], c[3]];
         for paint in self.paints() {
-            let mut p = ColorPaintData {
-                header: [0; 4],
-                color: [0.0; 4],
-                row0: [0.0; 4],
-                row1: [0.0; 4],
-                geometry: [0.0; 4],
-            };
+            let mut p = ColorPaintData::default();
             match paint {
                 Paint::Solid(c) => p.color = premultiply(*c),
                 Paint::Linear {
@@ -97,34 +100,12 @@ impl ColorField {
         if stops.is_empty() {
             stops.push(ColorStopData::default());
         }
-        let tiles: Vec<_> = self
-            .tiles()
-            .iter()
-            .map(|t| ColorTileData {
-                origin: t.origin,
-                mode: t.mode as u32,
-                padding: 0,
-                ids: t.recipes,
-            })
-            .collect();
         let mut recipes = vec![0u32; (self.recipes().len() * 2).max(1)];
         for (id, recipe) in self.recipes().iter().enumerate() {
             recipes[id * 2] = recipes.len() as u32;
             recipes[id * 2 + 1] = recipe.len() as u32;
             recipes.extend(recipe.iter().map(|&i| i as u32));
         }
-        ColorGpuData {
-            tiles,
-            paints,
-            stops,
-            recipes,
-        }
-    }
-}
-
-impl ColorGpuData {
-    /// Little-endian bytes for tile, paint, stop and recipe storage bindings, in that order.
-    pub fn to_le_bytes(&self) -> [Vec<u8>; 4] {
         fn uints(out: &mut Vec<u8>, values: &[u32]) {
             for value in values {
                 out.extend_from_slice(&value.to_le_bytes());
@@ -135,23 +116,84 @@ impl ColorGpuData {
                 out.extend_from_slice(&value.to_le_bytes());
             }
         }
-        let mut tables: [Vec<u8>; 4] = Default::default();
-        for tile in &self.tiles {
-            uints(&mut tables[0], &tile.origin);
-            uints(&mut tables[0], &[tile.mode, tile.padding]);
-            uints(&mut tables[0], &tile.ids);
+        let mut tables = ColorBuffers::<Vec<u8>>::default();
+        for tile in self.tiles() {
+            uints(
+                &mut tables.tiles,
+                &[tile.origin[0] + origin[0], tile.origin[1] + origin[1]],
+            );
+            uints(&mut tables.tiles, &[tile.mode as u32, 0]);
+            uints(&mut tables.tiles, &tile.recipes);
         }
-        for paint in &self.paints {
-            uints(&mut tables[1], &paint.header);
+        for paint in &paints {
+            uints(&mut tables.paints, &paint.header);
             for row in [paint.color, paint.row0, paint.row1, paint.geometry] {
-                floats(&mut tables[1], &row);
+                floats(&mut tables.paints, &row);
             }
         }
-        for stop in &self.stops {
-            floats(&mut tables[2], &stop.color);
-            floats(&mut tables[2], &stop.offset);
+        for stop in &stops {
+            floats(&mut tables.stops, &stop.color);
+            floats(&mut tables.stops, &stop.offset);
         }
-        uints(&mut tables[3], &self.recipes);
-        tables
+        uints(&mut tables.recipes, &recipes);
+        let cfg = self.config();
+        floats(
+            &mut tables.config,
+            &[
+                cfg.base_resolution as f32,
+                self.grid() as f32,
+                cfg.range as f32,
+                cfg.min_pixels as f32,
+            ],
+        );
+        Ok(tables)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        Vec2,
+        color::{ColorFieldConfig, ColorTile, TileMode},
+    };
+
+    #[test]
+    fn encoding_matches_the_portable_shader_contract() {
+        // Explicit ABI fixture: two recipes, one premultiplied solid, one relocated tile.
+        let field = ColorField {
+            config: ColorFieldConfig::default(),
+            grid: 1,
+            tiles: vec![ColorTile {
+                origin: [2, 3],
+                mode: TileMode::Boundary,
+                recipes: [0, 1, u32::MAX, u32::MAX],
+            }],
+            width: 8,
+            height: 8,
+            atlas: vec![0; 8 * 8 * 4],
+            paints: vec![Paint::Solid([1.0, 0.5, 0.0, 0.5])],
+            recipes: vec![vec![], vec![0]],
+            plane_min: Vec2::new(-1.0, -1.0),
+            plane_max: Vec2::new(1.0, 1.0),
+            advance: 2.0,
+        };
+        let data = field.encode([10, 20]).unwrap();
+        let words = |bytes: &[u8]| {
+            bytes
+                .chunks_exact(4)
+                .map(|word| u32::from_le_bytes(word.try_into().unwrap()))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(words(&data.tiles), [12, 23, 2, 0, 0, 1, u32::MAX, u32::MAX]);
+        assert_eq!(words(&data.recipes), [4, 0, 4, 1, 0]);
+        assert_eq!(data.paints.len(), 80);
+        assert_eq!(words(&data.paints[..16]), [0; 4]);
+        assert_eq!(words(&data.paints[16..32]), [0.5f32, 0.25, 0.0, 0.5].map(f32::to_bits));
+        assert!(data.paints[32..].iter().all(|&byte| byte == 0));
+        assert_eq!(data.stops, [0; 32]); // Nonempty binding even without gradients.
+        assert_eq!(words(&data.config), [128.0f32, 1.0, 0.125, 16.0].map(f32::to_bits));
+        assert!(field.encode([u32::MAX, 0]).is_err());
+        assert!(field.encode([0, u32::MAX]).is_err());
     }
 }

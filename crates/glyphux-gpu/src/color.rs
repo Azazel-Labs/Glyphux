@@ -5,7 +5,7 @@
 //! monochrome text styles (outlines, weight and shadows) do not apply to this pipeline.
 
 use crate::GlyphKey;
-use glyphux::color::{ColorError, ColorField, ColorGpuData};
+use glyphux::color::{ColorError, ColorField};
 use std::collections::HashMap;
 use wgpu::util::DeviceExt;
 
@@ -269,24 +269,6 @@ impl ColorRenderer {
         if width.max(height) > self.config.page_size {
             return Err(ColorError::Invalid("color glyph exceeds configured page size"));
         }
-        let ColorGpuData {
-            mut tiles,
-            paints,
-            stops,
-            recipes,
-        } = field.gpu_data();
-        let data: [&[u8]; 4] = [
-            bytemuck::cast_slice(&tiles),
-            bytemuck::cast_slice(&paints),
-            bytemuck::cast_slice(&stops),
-            bytemuck::cast_slice(&recipes),
-        ];
-        if data
-            .iter()
-            .any(|d| d.len() as u64 > limits.max_storage_buffer_binding_size)
-        {
-            return Err(ColorError::Invalid("paint buffers exceed device limits"));
-        }
         // Plan against copies so an out-of-space replacement leaves the old glyph intact.
         let mut free: Vec<_> = self.pages.iter().map(|p| p.free.clone()).collect();
         if let Some(old) = self.glyphs.get(&key) {
@@ -310,31 +292,22 @@ impl ColorRenderer {
         let (page, rect) = placement.ok_or(ColorError::Invalid(
             "color atlas full; remove cached glyphs or clear the atlas",
         ))?;
-        for tile in &mut tiles {
-            tile.origin[0] += rect.x;
-            tile.origin[1] += rect.y;
+        let encoded = field.encode([rect.x, rect.y])?;
+        let storage = [&encoded.tiles, &encoded.paints, &encoded.stops, &encoded.recipes];
+        if storage
+            .iter()
+            .any(|d| d.len() as u64 > limits.max_storage_buffer_binding_size)
+        {
+            return Err(ColorError::Invalid("paint buffers exceed device limits"));
         }
-        let data = [
-            bytemuck::cast_slice(&tiles),
-            bytemuck::cast_slice(&paints),
-            bytemuck::cast_slice(&stops),
-            bytemuck::cast_slice(&recipes),
-        ];
-        let buffers: Vec<_> = data
+        let buffers: Vec<_> = storage
             .iter()
             .map(|d| buffer(device, "glyphux color data", d, wgpu::BufferUsages::STORAGE))
             .collect();
-        let cfg = field.config();
-        let params = [
-            cfg.base_resolution as f32,
-            field.grid() as f32,
-            cfg.range as f32,
-            cfg.min_pixels as f32,
-        ];
         let uniform = buffer(
             device,
             "glyphux color config",
-            bytemuck::cast_slice(&params),
+            &encoded.config,
             wgpu::BufferUsages::UNIFORM,
         );
         if page == self.pages.len() {
@@ -428,7 +401,7 @@ impl ColorRenderer {
                 page,
                 rect,
                 bind_group,
-                minimum: cfg.min_pixels,
+                minimum: field.config().min_pixels,
             },
         );
         Ok(())

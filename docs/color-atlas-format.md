@@ -12,6 +12,25 @@ artwork fails explicitly rather than silently dropping glyphs. Output must be a
 new or empty directory. Fonts, shaping and field compilation are needed only when
 baking; the files below are sufficient to render the baked glyph IDs later.
 
+## Rust API
+
+Compile artwork with `ColorField::build`, then pack `(glyph_id, field)` pairs with
+`BakedColorAtlas::build(&fields, ColorAtlasConfig::default())`. Packing returns a
+`ColorAtlasError` for duplicate IDs, oversized patches or exhausted pages.
+`atlas.write(path)` writes the bundle.
+
+For direct integration, `atlas.pages()` exposes the distance pixels,
+`atlas.glyphs()` exposes typed metrics and `BufferSlice` values sorted by glyph ID,
+and `atlas.buffers()` exposes named `tiles`, `paints`, `stops`, `recipes` and
+`config` byte vectors. Each slice's `offset` and `length` selects one glyph's
+binding. `atlas.manifest()` serializes that same metadata for non-Rust consumers.
+
+For a single field, `field.encode([x, y])` produces the same five named bindings
+for a patch at that page origin. It handles tile relocation and little-endian
+encoding, including the config uniform. The runtime renderer uses this encoder
+too. Shader record structs and padding are implementation details; callers do
+not need to construct them. The binary contract below remains version 1.
+
 ## Files
 
 | File | Contents |

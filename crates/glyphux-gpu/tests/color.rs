@@ -101,12 +101,6 @@ fn color_cpu_gpu_parity() {
             font: font_id as u32,
             glyph: 0,
         };
-        let tables = field.gpu_data();
-        let exported = tables.to_le_bytes();
-        assert_eq!(exported[0], bytemuck::cast_slice::<_, u8>(&tables.tiles));
-        assert_eq!(exported[1], bytemuck::cast_slice::<_, u8>(&tables.paints));
-        assert_eq!(exported[2], bytemuck::cast_slice::<_, u8>(&tables.stops));
-        assert_eq!(exported[3], bytemuck::cast_slice::<_, u8>(&tables.recipes));
         renderer.upload(&device, &queue, key, &field).unwrap();
         for (size, angle, opacity) in [(32u32, 0.0f32, 1.0f32), (64, 0.35, 0.6)] {
             let side = size * 2;
