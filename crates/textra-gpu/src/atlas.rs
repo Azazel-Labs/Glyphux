@@ -80,7 +80,7 @@ impl Default for AtlasConfig {
     fn default() -> Self {
         AtlasConfig {
             size: 1024,
-            layers: 2,
+            layers: 6,
             format: wgpu::TextureFormat::Rgba8Unorm,
             kind: FieldKind::MTSDF,
             px_range: 4.0,

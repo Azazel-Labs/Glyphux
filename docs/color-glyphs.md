@@ -39,7 +39,7 @@ foreground color, face and variation instance. Uploading an existing key replace
 `remove` and `clear` release cached resources. CPU compilation and upload are explicit,
 so the application can schedule expensive preprocessing off-frame. Color glyphs share
 linear RGBA atlas pages, allocated on demand. `ColorAtlasConfig` defaults to 1024 by
-1024 texels per page and a maximum of two pages. Use `ColorRenderer::with_config` to
+1024 texels per page and a maximum of six pages. Use `ColorRenderer::with_config` to
 choose a one-page cap or another bounded configuration. Tile origins are relocated
 into the shared page; each field's filtering gutters are preserved.
 

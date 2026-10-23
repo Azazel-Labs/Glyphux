@@ -410,7 +410,7 @@ fn pipeline() -> String {
         bh,
         "#fff7e6",
         "#f0b45a",
-        &["Glyph atlas", "up to 2 × 1024² pages"],
+        &["Glyph atlas", "up to 6 × 1024² pages"],
     );
     let mid = |l: usize| row(l) + bh / 2.0;
     for (l, a, b) in [

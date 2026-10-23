@@ -12,7 +12,7 @@ fn pages_grow_preserve_pixels_and_respect_cap() {
         }
     };
     let square = || Shape::from_description("{ 0,0; 0,1; 1,1; 1,0; # }").ok();
-    for cap in [1, 2] {
+    for cap in [1, 2, 6] {
         let config = AtlasConfig {
             size: 64,
             layers: cap,
@@ -54,11 +54,11 @@ fn pages_grow_preserve_pixels_and_respect_cap() {
             );
         }
         atlas.begin_frame();
-        if cap == 2 {
+        if cap > 1 {
             atlas.get(key(0), 64.0, square).unwrap();
         }
         let next = atlas.get(key(cap), 64.0, square).unwrap();
-        assert_eq!(next.layer, cap - 1);
+        assert_eq!(next.layer, u32::from(cap > 1));
         assert_eq!(atlas.stats().evicted_layers, 1);
         assert_eq!(atlas.page_count(), cap);
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());

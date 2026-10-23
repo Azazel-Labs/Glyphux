@@ -36,7 +36,7 @@
 <text x="541.0" y="405.5" font-size="11.5" fill="#6e7781" text-anchor="middle" font-weight="400">on-demand pages, LRU at cap</text>
 <rect x="664.0" y="362.0" width="178.0" height="62.0" rx="7" fill="#fff7e6" stroke="#f0b45a" stroke-width="1.2"/>
 <text x="753.0" y="389.5" font-size="13" fill="#24292f" text-anchor="middle" font-weight="600">Glyph atlas</text>
-<text x="753.0" y="405.5" font-size="11.5" fill="#6e7781" text-anchor="middle" font-weight="400">up to 2 × 1024² pages</text>
+<text x="753.0" y="405.5" font-size="11.5" fill="#6e7781" text-anchor="middle" font-weight="400">up to 6 × 1024² pages</text>
 <path d="M206.0,93.0H237.0" stroke="#6e7781" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
 <path d="M206.0,243.0H237.0" stroke="#6e7781" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
 <path d="M418.0,243.0H449.0" stroke="#6e7781" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>

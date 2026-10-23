@@ -330,12 +330,12 @@ fn shared_atlas(out: &str, fields: &[&ColorField]) {
     );
     svg.add(r##"<rect x="695" y="285" width="270" height="270" rx="8" fill="#f6f8fa" stroke="#8c959f" stroke-dasharray="8 6"/>"##);
     svg.text(830.0, 412.0, 19.0, MUTED, "middle", 600, "No texture yet");
-    svg.text(830.0, 443.0, 14.0, MUTED, "middle", 400, "Default cap: 2 pages");
+    svg.text(830.0, 443.0, 14.0, MUTED, "middle", 400, "Default cap: 6 pages");
     label(
         &mut svg,
         28.0,
         639.0,
-        "On demand: 0 pages -> 1 page -> 2 pages. Page size and cap are configurable; pages stay fixed in size.",
+        "On demand: 0 pages -> 1 -> 2 -> ... -> 6 maximum. Page size and cap are configurable; pages stay fixed in size.",
     );
     label(
         &mut svg,

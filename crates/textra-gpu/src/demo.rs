@@ -209,37 +209,37 @@ struct Ctx<'a> {
     order: &'a mut Vec<(u8, u32)>,
 }
 
-impl Ctx<'_> {
-    /// Splits `text` into runs by font (byte ranges): letters and digits go to the primary
-    /// font if it has them; anything else stays in the current run's font if that has it;
-    /// otherwise the first font that has the character takes over.
-    fn split(&self, text: &str) -> Vec<(usize, std::ops::Range<usize>)> {
-        let has = |f: usize, c: char| self.fonts[f].font.has_glyph(c);
-        let mut runs: Vec<(usize, std::ops::Range<usize>)> = Vec::new();
-        for (i, c) in text.char_indices() {
-            let current = runs.last().map(|r| r.0);
-            let color_font = (0..self.fonts.len()).find(|&f| self.fonts[f].color_characters.contains(c));
-            let f = if let Some(f) = color_font {
-                f
-            } else if c.is_alphanumeric() && has(self.primary, c) {
-                self.primary
-            } else if let Some(f) = current.filter(|&f| c.is_whitespace() || has(f, c)) {
-                f
-            } else if has(self.primary, c) {
-                self.primary
-            } else {
-                (0..self.fonts.len())
-                    .find(|&f| self.fonts[f].fallback && has(f, c))
-                    .unwrap_or(self.primary)
-            };
-            match runs.last_mut() {
-                Some(r) if r.0 == f => r.1.end = i + c.len_utf8(),
-                _ => runs.push((f, i..i + c.len_utf8())),
-            }
+/// Splits `text` into runs by font (byte ranges): letters, digits and supported whitespace go to the primary
+/// font if it has them; anything else stays in the current run's font if that has it;
+/// otherwise the first font that has the character takes over.
+fn split_fonts(fonts: &[NamedFont], primary: usize, text: &str) -> Vec<(usize, std::ops::Range<usize>)> {
+    let has = |f: usize, c: char| fonts[f].font.has_glyph(c);
+    let mut runs: Vec<(usize, std::ops::Range<usize>)> = Vec::new();
+    for (i, c) in text.char_indices() {
+        let current = runs.last().map(|r| r.0);
+        let color_font = (0..fonts.len()).find(|&f| fonts[f].color_characters.contains(c));
+        let f = if let Some(f) = color_font {
+            f
+        } else if (c.is_alphanumeric() || c.is_whitespace()) && has(primary, c) {
+            primary
+        } else if let Some(f) = current.filter(|&f| has(f, c)) {
+            f
+        } else if has(primary, c) {
+            primary
+        } else {
+            (0..fonts.len())
+                .find(|&f| fonts[f].fallback && has(f, c))
+                .unwrap_or(primary)
+        };
+        match runs.last_mut() {
+            Some(r) if r.0 == f => r.1.end = i + c.len_utf8(),
+            _ => runs.push((f, i..i + c.len_utf8())),
         }
-        runs
     }
+    runs
+}
 
+impl Ctx<'_> {
     /// `text` shaped run by run in the fonts that have its characters.
     fn shape(&mut self, text: &str) -> Arc<Shaped> {
         if let Some(s) = self.cache.get(None, text) {
@@ -247,7 +247,7 @@ impl Ctx<'_> {
         }
         let mut x = 0.0;
         let mut runs = Vec::new();
-        for (font, range) in self.split(text) {
+        for (font, range) in split_fonts(self.fonts, self.primary, text) {
             let line = self.shaper.shape_line(&self.fonts[font].font, &text[range]);
             let w = line.width;
             runs.push(Run { font, line, x });
@@ -426,7 +426,7 @@ struct Scratch {
 const WEIGHTS: [f32; 9] = [100.0, 200.0, 300.0, 400.0, 500.0, 600.0, 700.0, 800.0, 900.0];
 
 impl Scene {
-    /// MTSDF with on-demand pages, capped at two, including for mixed-script text.
+    /// MTSDF with on-demand pages, capped at six, including for mixed-script text.
     pub fn default_config() -> AtlasConfig {
         AtlasConfig::default()
     }
@@ -965,5 +965,60 @@ impl Scene {
         if let (Some(p), Some(r)) = (&mut self.profiler, readback) {
             p.submitted(r);
         }
+    }
+}
+
+#[cfg(test)]
+mod spacing_tests {
+    use super::*;
+
+    #[test]
+    fn emoji_spaces_use_primary_font_metrics() {
+        let fonts: Vec<_> = [
+            (
+                include_bytes!("../../../examples/web-demo/assets/Inter-Regular.otf").as_slice(),
+                "",
+            ),
+            (
+                include_bytes!("../../textra/tests/assets/Noto-COLRv1-Subset.ttf").as_slice(),
+                "😀",
+            ),
+            (
+                include_bytes!("../../textra/tests/assets/Twemoji-Subset.ttf").as_slice(),
+                "🤖",
+            ),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(i, (bytes, chars))| NamedFont {
+            name: i.to_string(),
+            font: ShapingFont::new(i as u32, Arc::new(bytes.to_vec()), 0).unwrap(),
+            color_characters: chars.to_owned(),
+            fallback: true,
+        })
+        .collect();
+        let mut shaper = Shaper::new();
+        let space = shaper.shape_line(&fonts[0].font, " ").width;
+        assert!(space > 0.0 && space < 0.5);
+        for text in ["😀 😀", "😀  😀", "😀 🤖", "🤖 😀", "😀 A", "A 🤖", " 😀 "] {
+            let mut width = 0.0;
+            let mut without_spaces = 0.0;
+            for (font, range) in split_fonts(&fonts, 0, text) {
+                let run = &text[range];
+                if run.contains(' ') {
+                    assert_eq!(font, 0, "space assigned to emoji font: {text}");
+                }
+                let shaped = shaper.shape_line(&fonts[font].font, run);
+                assert!(shaped.glyphs.iter().all(|g| g.glyph != 0), "missing glyph in {text}");
+                width += shaped.width;
+                without_spaces += shaper.shape_line(&fonts[font].font, &run.replace(' ', "")).width;
+            }
+            let expected = text.chars().filter(|&c| c == ' ').count() as f32 * space;
+            assert!(
+                (width - without_spaces - expected).abs() < 1e-5,
+                "wrong space advance: {text}"
+            );
+        }
+        assert_eq!(split_fonts(&fonts, 0, "😀😀").len(), 1);
     }
 }

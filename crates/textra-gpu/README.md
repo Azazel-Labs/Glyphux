@@ -77,7 +77,7 @@ Both atlas pools allocate pages on demand, with independent caps:
 
 | | Monochrome `GlyphAtlas` | Color `ColorRenderer` |
 |---|---|---|
-| Default limit | Two 1024 × 1024 pages | Two 1024 × 1024 pages |
+| Default limit | Six 1024 × 1024 pages | Six 1024 × 1024 pages |
 | Configuration | `AtlasConfig::size`, `layers` | `ColorAtlasConfig::page_size`, `max_pages` |
 | Allocation | `flush` grows a texture array and copies existing pages | `upload` creates another fixed-size page only when existing pages cannot fit |
 | At the cap | Recycle the least recently used page unused this frame; otherwise placement may fail | Return an error; preserve resident glyphs and any previous upload under the same key |
@@ -94,7 +94,7 @@ use textra_gpu::color::{ColorAtlasConfig, ColorRenderer};
 
 let mut colors = ColorRenderer::with_config(&device, surface_format, ColorAtlasConfig {
     page_size: 1024,
-    max_pages: 2, // set to 1 for a single-page cap
+    max_pages: 6, // default upper bound; pages are allocated only as needed
 })?;
 colors.upload(&device, &queue, key, &compiled_field)?;
 // Each frame: prepare placements, then render ordered runs in your render pass.
@@ -132,7 +132,7 @@ use textra_gpu::units::{em, px};
 
 let font = ShapingFont::new(0, Arc::new(std::fs::read("Font.otf")?), 0).unwrap();
 let mut shaper = Shaper::new();
-let mut atlas = GlyphAtlas::new(&device, AtlasConfig::default())?; // on-demand 1024² MTSDF pages, max 2
+let mut atlas = GlyphAtlas::new(&device, AtlasConfig::default())?; // on-demand 1024² MTSDF pages, max 6
 let mut text = TextRenderer::new(&device, surface_format);
 let units = Units::new(device_pixel_ratio);   // layout in logical (CSS) pixels
 let style = TextStyle::new(px(48.0), [1.0; 4]).glow([1.0, 0.5, 0.2, 0.6], em(0.15));
@@ -172,7 +172,7 @@ queue.submit([encoder.finish()]);
   away and regenerated once if its probe asks for more (6 of 154 glyphs in the shaping demo,
   none in Inter's ASCII). Off with `detail_probe: false`.
 * **Cache.** Shelf packing per layer of a texture array. `AtlasConfig::layers` is the page
-  cap (two by default), not an upfront allocation. `flush` grows the array as needed and
+  cap (six by default), not an upfront allocation. `flush` grows the array as needed and
   copies existing pages before writing new glyphs. Acquire custom views and bind groups
   after flushing; `TextRenderer::prepare` automatically rebinds a grown atlas. Before the
   first generated glyph there is only a 1 by 1 placeholder. `page_count()` includes queued

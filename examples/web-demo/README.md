@@ -27,7 +27,7 @@ or the interval between animation frames. The web demo does not request GPU time
   the title and flow along the editable text spline. They use the same layout and
   animation transforms as text, with their own color rendering pipeline.
 * The atlas toggle shows the monochrome pages and shared color atlas pages. Both pools
-  allocate pages as needed, each with a default cap of two 1024 by 1024 pages.
+  allocate pages as needed, each with a default cap of six 1024 by 1024 pages.
   Color thumbnails show packed RGB region distances, not finished emoji colors.
 * Glows use four extra samples with a filter that widens outside the glyph. The letter
   fill remains sharp; this is a visual experiment, not a measured speed improvement.

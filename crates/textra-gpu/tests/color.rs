@@ -222,7 +222,7 @@ fn shared_pages_grow_to_cap_and_reuse_space() {
     )
     .unwrap();
     let [w, h] = field.atlas_size();
-    for cap in [1, 2] {
+    for cap in [1, 2, 6] {
         let mut renderer = ColorRenderer::with_config(
             &device,
             wgpu::TextureFormat::Rgba8Unorm,

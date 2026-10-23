@@ -23,8 +23,8 @@
 <text x="695.0" y="269.0" font-size="12" fill="#6e7781" text-anchor="start" font-weight="400">Created only when existing pages cannot fit</text>
 <rect x="695" y="285" width="270" height="270" rx="8" fill="#f6f8fa" stroke="#8c959f" stroke-dasharray="8 6"/>
 <text x="830.0" y="412.0" font-size="19" fill="#6e7781" text-anchor="middle" font-weight="600">No texture yet</text>
-<text x="830.0" y="443.0" font-size="14" fill="#6e7781" text-anchor="middle" font-weight="400">Default cap: 2 pages</text>
-<text x="28.0" y="639.0" font-size="14" fill="#6e7781" text-anchor="start" font-weight="400">On demand: 0 pages -&gt; 1 page -&gt; 2 pages. Page size and cap are configurable; pages stay fixed in size.</text>
+<text x="830.0" y="443.0" font-size="14" fill="#6e7781" text-anchor="middle" font-weight="400">Default cap: 6 pages</text>
+<text x="28.0" y="639.0" font-size="14" fill="#6e7781" text-anchor="start" font-weight="400">On demand: 0 pages -&gt; 1 -&gt; 2 -&gt; ... -&gt; 6 maximum. Page size and cap are configurable; pages stay fixed in size.</text>
 <text x="28.0" y="675.0" font-size="14" fill="#6e7781" text-anchor="start" font-weight="400">Remove a glyph: reuse its rectangle. Clear the cache: release all pages. Full at the cap: return an error.</text>
 <text x="28.0" y="711.0" font-size="14" fill="#6e7781" text-anchor="start" font-weight="400">Monochrome uses a separate growing texture array and can recycle a page unused in the current frame.</text>
 <text x="28.0" y="747.0" font-size="14" fill="#6e7781" text-anchor="start" font-weight="400">Shared color storage does not yet batch draws: paint buffers and bind groups remain per glyph.</text>

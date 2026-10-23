@@ -149,7 +149,7 @@ instanced quad per glyph samples the atlas, whether or not anything was generate
 ![A corner of a GPU atlas layer with glyphs at several sizes](docs/figures/atlas.png)
 
 Generated fields go into a texture array: 1024 × 1024 pages allocated on demand, capped
-at two by default (`AtlasConfig::layers`), with the true
+at six by default (`AtlasConfig::layers`), with the true
 distance in the alpha channel (MTSDF). Each glyph is generated at a resolution chosen from
 the size it is drawn at: 32, 64 or 128 texels per em. Small text gets small fields, large
 text gets detail, and one glyph can be cached at several sizes. When the atlas is full, the
@@ -325,11 +325,11 @@ outer silhouette independently.
 ![Actual GPU readback of three color glyphs sharing one atlas page, with a second page still unallocated](docs/figures/color-atlas.svg)
 
 `ColorRenderer` packs these glyph-local distance payloads into shared 1024 × 1024
-GPU pages. Pages are allocated as needed, capped at two by default. Tile origins are
+GPU pages. Pages are allocated as needed, capped at six by default. Tile origins are
 offset into the chosen page, with filtering gutters preserved. Paints and recipes
 remain in per-glyph buffers. Removing a glyph frees its rectangle; a full color atlas
 returns an error without evicting existing glyphs. The monochrome atlas is a separate
-pool with its own two-page default cap and eviction of pages unused in the current frame.
+pool with its own six-page default cap and eviction of pages unused in the current frame.
 
 ![Fire, grinning face and robot decoded at three sizes, followed by the per-pixel rendering steps](docs/figures/color-render.svg)
 

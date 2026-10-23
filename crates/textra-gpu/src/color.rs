@@ -23,7 +23,7 @@ impl Default for ColorAtlasConfig {
     fn default() -> Self {
         Self {
             page_size: 1024,
-            max_pages: 2,
+            max_pages: 6,
         }
     }
 }
