@@ -5,16 +5,16 @@ members = ["crates/glyphux", "crates/glyphux-atlas", "crates/glyphux-cli", "crat
 exclude = ["examples/web-demo"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT"
 repository = "https://github.com/Azazel-Labs/Glyphux"
 
 [workspace.dependencies]
-glyphux = { path = "crates/glyphux", version = "0.1.0" }
-glyphux-atlas = { path = "crates/glyphux-atlas", version = "0.1.0" }
-glyphux-gpu = { path = "crates/glyphux-gpu", version = "0.1.0" }
+glyphux = { path = "crates/glyphux", version = "0.3.0" }
+glyphux-atlas = { path = "crates/glyphux-atlas", version = "0.3.0" }
+glyphux-gpu = { path = "crates/glyphux-gpu", version = "0.3.0" }
 bytemuck = { version = "1.25", default-features = false, features = ["derive"] }
 # naga must stay on the version wgpu uses (glyphux-gpu validates its shaders with it).
 wgpu = { version = "30.0.1", default-features = false, features = ["std", "wgsl"] }
