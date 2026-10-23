@@ -1,5 +1,6 @@
 # Formatting, lints and tests for the workspace, a fully optimized build of the web demo, and,
-# on pushes to main once both pass, its deployment to GitHub Pages.
+# on pushes to main once both pass, its deployment to GitHub Pages. Published GitHub
+# releases publish the workspace to crates.io after all three validation jobs pass.
 name: CI
 
 on:
@@ -7,13 +8,16 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  release:
+    types: [published]
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # A manual CI run must not cancel a release while crates are being uploaded.
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'release' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -29,6 +33,29 @@ jobs:
       # rust-toolchain.toml: stable with rustfmt, clippy and rust-src.
       - run: rustup toolchain install --no-self-update
       - uses: Swatinem/rust-cache@v2
+      - name: Check release version
+        if: github.event_name == 'release'
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import pathlib
+          import tomllib
+
+          root = tomllib.loads(pathlib.Path("Cargo.toml").read_text())
+          version = root["workspace"]["package"]["version"]
+          expected = f"v{version}"
+          if os.environ["RELEASE_TAG"] != expected:
+              raise SystemExit(f"Release tag must be {expected}")
+          for manifest in pathlib.Path("crates").glob("*/Cargo.toml"):
+              package = tomllib.loads(manifest.read_text())["package"]
+              if package["version"] != {"workspace": True}:
+                  raise SystemExit(f"{manifest}: version must inherit from the workspace")
+          for name, dependency in root["workspace"]["dependencies"].items():
+              if "path" in dependency and dependency.get("version") != version:
+                  raise SystemExit(f"{name}: dependency version must be {version}")
+          PY
       - run: cargo fmt --all --check
       - run: cargo fmt --check
         working-directory: examples/web-demo
@@ -114,3 +141,30 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
+
+  publish:
+    name: Publish crates.io release
+    needs: [check, msrv, web-demo]
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    # Serialize releases, including releases with different tags.
+    concurrency:
+      group: crates-io-publish
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install --no-self-update
+      - uses: Swatinem/rust-cache@v2
+      # Cargo verifies every package before uploading and handles dependency order.
+      # The examples are excluded by their publish = false manifests.
+      - name: Verify crate packages
+        run: cargo publish --workspace --locked --dry-run
+      - name: Publish crates
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          if [ -z "$CARGO_REGISTRY_TOKEN" ]; then
+            echo "::error::Add the CARGO_REGISTRY_TOKEN repository Actions secret before publishing."
+            exit 1
+          fi
+          cargo publish --workspace --locked
