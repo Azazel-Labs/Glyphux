@@ -1,7 +1,7 @@
 # Releasing Glyphux
 
 The CI workflow in `.github/workflows/ci.yml` releases tags matching `v*`.
-A tag must exactly match the workspace version, for example `v0.3.0`.
+A tag must exactly match the workspace version, for example `v0.4.0`.
 
 ## Setup
 
@@ -18,8 +18,8 @@ not been published yet; its first publish needs a token that may publish new cra
 3. Create an annotated tag and push the commit and tag together:
 
    ```sh
-   git tag -a v0.3.0 -m "Glyphux 0.3.0"
-   git push --atomic origin main v0.3.0
+   git tag -a v0.4.0 -m "Glyphux 0.4.0"
+   git push --atomic origin main v0.4.0
    ```
 
 The tag workflow checks versions, formatting, lints, tests, minimum Rust versions
