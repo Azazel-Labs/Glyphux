@@ -33,7 +33,7 @@ the build command again after changing the addon.
 
 In the first scene, the A key shows the atlas page that holds the generated fields; Page
 Up and Page Down switch pages. `godot --path examples/godot -- --scene=world
---screenshot=out.png` opens a scene (`main`, `rich` or `world`), saves the window after
+--screenshot=out.png` opens a scene (`main`, `rich` or `world`)`, saves the window after
 three seconds and quits; `--updates` prints how many times labels have updated, every 60
 frames. In the first scene, `--atlas` starts with the atlas page shown and
 `--start=SECONDS` that far into the animation.
