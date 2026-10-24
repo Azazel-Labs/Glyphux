@@ -1,125 +1,133 @@
-//! GPU (wgpu / WGSL compute) distance field generation for [`glyphux`].
+//! GPU distance field generation for [`glyphux`], independent of any graphics API.
 //!
-//! The CPU prepares shapes and bins edges into tiles (exact culling bounds); a compute pass
-//! evaluates every texel of a whole batch of glyphs in one dispatch, with the same edge
-//! selection rules as the CPU generator.
+//! The CPU prepares shapes and bins edges into tiles (exact culling bounds); compute kernels
+//! evaluate every texel of a whole batch of glyphs in one dispatch, with the same edge
+//! selection rules as the CPU generator. This crate holds everything but the API calls: the
+//! glyph atlas' cache and page allocation, the CPU preparation (on worker threads), the
+//! batches the kernels read ([`field`]), text shaping and layout, and the WGSL of every
+//! shader. A backend creates the buffers and textures, compiles the shaders for its API and
+//! runs the kernels a batch lists:
+//!
+//! * `glyphux-wgpu`: wgpu (native and WebGPU), with text and color renderers.
+//! * `glyphux-godot`: Godot 4's own `RenderingDevice`, as a GDExtension.
 
 pub mod atlas;
-pub mod color;
-#[cfg(feature = "demo")]
-pub mod demo;
+pub mod color_atlas;
 pub mod field;
-pub mod profile;
+#[cfg(feature = "glsl")]
+pub mod glsl;
+#[cfg(feature = "shaping")]
+pub mod paragraph;
 #[cfg(feature = "shaping")]
 pub mod shaping;
+pub mod spirv;
 pub mod text;
 pub mod units;
 mod workers;
 
-pub use atlas::{AtlasConfig, AtlasConfigError, AtlasGlyph, AtlasStats, GlyphAtlas, GlyphKey};
-pub use field::{FieldBatch, FieldGenerator, FieldJob, FieldLayout, PreparedJob, TILE, prepare_job, shader_source};
-#[cfg(not(target_arch = "wasm32"))]
-pub use field::{read_field, read_stencil, read_texture_layer};
+pub use atlas::{AtlasConfig, AtlasConfigError, AtlasFormat, AtlasGlyph, AtlasStats, GlyphAtlas, GlyphKey};
+pub use field::{Batch, Binding, FieldJob, FieldLayout, Kernel, PreparedJob, TILE, pack, prepare_job, shader_source};
 pub use glyphux;
 pub use glyphux::gpu::{FieldKind, GpuShape};
-pub use profile::GpuProfiler;
 #[cfg(feature = "shaping")]
-pub use shaping::{ShapedGlyph, ShapedLine, Shaper, ShapingFont};
-pub use text::{GlyphInstance, ResolvedStyle, Shadow, TextRenderer, TextStyle};
+pub use shaping::{ShapedGlyph, ShapedLine, Shaper, ShapingFont, split_runs, split_runs_with};
+pub use text::{GlyphInstance, ResolvedStyle, Shadow, TextStyle};
 pub use units::{Length, Units};
-pub use wgpu;
 
-/// Limits the generator needs (fits WebGPU's and GLES 3.1's defaults).
-pub fn required_limits() -> wgpu::Limits {
-    wgpu::Limits {
-        max_storage_buffers_per_shader_stage: 8,
-        ..wgpu::Limits::downlevel_defaults()
-    }
-}
-
-/// Opens the default adapter and a device suitable for the generator (blocking helper for
-/// native tools and tests; apps usually pass their own device).
-#[cfg(not(target_arch = "wasm32"))]
-pub fn default_device() -> Result<(wgpu::Adapter, wgpu::Device, wgpu::Queue), String> {
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
-    let adapter = pollster_block(instance.request_adapter(&wgpu::RequestAdapterOptions::default()))
-        .map_err(|e| format!("no adapter: {e}"))?;
-    let (device, queue) = pollster_block(adapter.request_device(&wgpu::DeviceDescriptor {
-        label: Some("glyphux"),
-        // Timestamps for GpuProfiler where the adapter has them.
-        required_features: adapter.features() & wgpu::Features::TIMESTAMP_QUERY,
-        required_limits: required_limits().using_resolution(adapter.limits()),
-        experimental_features: wgpu::ExperimentalFeatures::disabled(),
-        memory_hints: wgpu::MemoryHints::MemoryUsage,
-        trace: wgpu::Trace::Off,
-    }))
-    .map_err(|e| format!("no device: {e}"))?;
-    Ok((adapter, device, queue))
-}
-
-/// Minimal blocking executor (wgpu's native futures resolve after a poll or immediately).
-#[cfg(not(target_arch = "wasm32"))]
-fn pollster_block<F: Future>(f: F) -> F::Output {
-    use std::sync::Arc;
-    use std::task::{Context, Poll, Wake, Waker};
-    struct Thread(std::thread::Thread);
-    impl Wake for Thread {
-        fn wake(self: Arc<Self>) {
-            self.0.unpark();
-        }
-    }
-    let waker = Waker::from(Arc::new(Thread(std::thread::current())));
-    let mut cx = Context::from_waker(&waker);
-    let mut f = std::pin::pin!(f);
-    loop {
-        match f.as_mut().poll(&mut cx) {
-            Poll::Ready(v) => return v,
-            Poll::Pending => std::thread::park(),
-        }
-    }
-}
-
-/// Every WGSL module the crate builds, exactly as handed to wgpu, must pass naga's parser and
-/// validator (WebGPU capabilities), so shader errors show up in `cargo test` without a GPU.
+/// Every WGSL module the crate provides, exactly as backends get it, must pass naga's parser
+/// and validator (WebGPU capabilities), so shader errors show up in `cargo test` without a GPU.
 #[cfg(test)]
 mod shader_validation {
-    fn validate(name: &str, source: &str) {
+    use crate::{AtlasFormat, Binding, Kernel};
+
+    fn parse(name: &str, source: &str) -> (naga::Module, naga::valid::ModuleInfo) {
         let module = naga::front::wgsl::parse_str(source)
             .unwrap_or_else(|e| panic!("{name}: WGSL parse error\n{}", e.emit_to_string(source)));
-        naga::valid::Validator::new(
+        let info = naga::valid::Validator::new(
             naga::valid::ValidationFlags::all(),
             naga::valid::Capabilities::default(),
         )
         .validate(&module)
         .unwrap_or_else(|e| panic!("{name}: WGSL validation error\n{}", e.emit_to_string(source)));
+        (module, info)
     }
 
     #[test]
     fn field_generator() {
-        validate("field generator", &crate::shader_source());
+        parse("field generator", &crate::shader_source());
     }
 
     #[test]
     fn atlas_store() {
         for format in [
-            wgpu::TextureFormat::Rgba8Unorm,
-            wgpu::TextureFormat::Rgba16Float,
-            wgpu::TextureFormat::Rgba32Float,
+            AtlasFormat::Rgba8Unorm,
+            AtlasFormat::Rgba16Float,
+            AtlasFormat::Rgba32Float,
         ] {
-            validate(
+            parse(
                 &format!("atlas store ({format:?})"),
-                &crate::atlas::store_shader_source(format).expect("supported format"),
+                &crate::atlas::store_shader_source(format),
             );
         }
     }
 
     #[test]
     fn text() {
-        validate("text", crate::text::TEXT_SHADER);
+        parse("text", crate::text::TEXT_SHADER);
     }
 
     #[test]
     fn color() {
-        validate("color", crate::color::COLOR_SHADER);
+        parse("color", glyphux::color::COLOR_SHADER);
+    }
+
+    /// Every kernel's entry point exists and uses only the bindings [`Kernel::bindings`]
+    /// lists, with the access [`Binding::read_only`] gives: what backends build their bind
+    /// group layouts from.
+    #[test]
+    fn kernel_contract() {
+        use std::collections::BTreeSet;
+        let field = parse("field generator", &crate::shader_source());
+        let store = parse(
+            "atlas store",
+            &crate::atlas::store_shader_source(AtlasFormat::Rgba8Unorm),
+        );
+        for kernel in [
+            Kernel::Distance,
+            Kernel::CorrectCorners,
+            Kernel::CorrectProtect,
+            Kernel::CorrectFind,
+            Kernel::CorrectApply,
+            Kernel::Store,
+        ] {
+            let (module, info) = if kernel == Kernel::Store { &store } else { &field };
+            let index = module
+                .entry_points
+                .iter()
+                .position(|e| e.name == kernel.entry_point())
+                .unwrap_or_else(|| panic!("{kernel:?}: no entry point {}", kernel.entry_point()));
+            let declared: BTreeSet<u32> = kernel.bindings().iter().map(|b| b.index()).collect();
+            let entry = info.get_entry_point(index);
+            for (handle, var) in module.global_variables.iter() {
+                let Some(rb) = &var.binding else {
+                    continue;
+                };
+                assert_eq!(rb.group, 0, "{kernel:?}");
+                if entry[handle].is_empty() {
+                    continue;
+                }
+                assert!(
+                    declared.contains(&rb.binding),
+                    "{kernel:?} uses binding {} without declaring it",
+                    rb.binding
+                );
+                let binding = Binding::ALL[rb.binding as usize];
+                let writable = match var.space {
+                    naga::AddressSpace::Storage { access } => access.contains(naga::StorageAccess::STORE),
+                    _ => true,
+                };
+                assert_eq!(binding.read_only(), !writable, "{kernel:?}: {binding:?}");
+            }
+        }
     }
 }

@@ -1,9 +1,15 @@
-//! Distance field evaluation on the GPU: batching, upload and the fine pass.
-
-use std::num::NonZeroU64;
+//! Distance field jobs and batches: everything the GPU kernels need, prepared on the CPU and
+//! independent of any graphics API.
+//!
+//! A batch runs the kernels of [`shader_source`] (and, for an atlas, [`Kernel::Store`]) in
+//! the order [`Batch::kernels`] lists them. Each kernel binds the buffers of [`Binding`] in
+//! group 0: a backend creates them, fills the inputs with [`Batch::bytes`], sizes the outputs
+//! with [`Batch::output_size`] and dispatches the listed workgroup counts.
 
 use bytemuck::{Pod, Zeroable, cast_slice};
-use glyphux::gpu::{FieldKind, GpuCorrection, GpuShape, TileBins, bin_tiles, corner_texels};
+use glyphux::gpu::{
+    FieldKind, GpuContour, GpuCorrection, GpuEdge, GpuShape, GpuTileGroup, TileBins, bin_tiles, corner_texels,
+};
 use glyphux::{ErrorCorrectionConfig, PreparedShape, Transform};
 
 /// Side of the square texel tiles (one workgroup each).
@@ -16,7 +22,7 @@ pub const MAX_OVERLAP_CONTOURS: usize = 64;
 /// Per-glyph record of a batch (matches `Glyph` in `common.wgsl`, 144 bytes).
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod, Zeroable)]
-pub(crate) struct GlyphRecord {
+pub struct GlyphRecord {
     pub edge_offset: u32,
     pub edge_count: u32,
     pub contour_offset: u32,
@@ -51,9 +57,10 @@ pub(crate) struct GlyphRecord {
     pub atlas_layer: u32,
 }
 
+/// One tile of one glyph (the per-tile kernels' work list).
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod, Zeroable)]
-pub(crate) struct WorkItem {
+pub struct WorkItem {
     pub glyph: u32,
     pub tile: u32,
 }
@@ -112,7 +119,7 @@ impl<'a> FieldJob<'a> {
     }
 }
 
-/// Where a job's texels are in [`FieldBatch::field`].
+/// Where a job's texels are in a batch's field output ([`Binding::Field`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FieldLayout {
     /// Index of the first texel (`vec4<f32>` each), rows top to bottom.
@@ -123,7 +130,7 @@ pub struct FieldLayout {
 
 /// Everything the CPU computes for one job: its GPU records, tile bins and error correction
 /// data. Owns its data and needs no device, so it can be built on any thread
-/// ([`prepare_job`]) and uploaded later ([`FieldGenerator::upload`]).
+/// ([`prepare_job`]) and packed into a [`Batch`] later ([`pack`]).
 pub struct PreparedJob {
     gpu: GpuShape,
     bins: TileBins,
@@ -266,157 +273,7 @@ fn far_tile_signs(bins: &mut TileBins, job: &FieldJob<'_>, band2: f32) {
     }
 }
 
-/// A buffer reused from batch to batch, grown (by powers of two) when a batch needs more.
-struct Slot {
-    label: &'static str,
-    usage: wgpu::BufferUsages,
-    buffer: Option<wgpu::Buffer>,
-}
-
-impl Slot {
-    fn new(label: &'static str, usage: wgpu::BufferUsages) -> Self {
-        Slot {
-            label,
-            usage,
-            buffer: None,
-        }
-    }
-
-    /// A buffer of at least `size` bytes.
-    fn ensure(&mut self, device: &wgpu::Device, size: u64) -> &wgpu::Buffer {
-        let size = size.max(16);
-        if self.buffer.as_ref().is_none_or(|b| b.size() < size) {
-            self.buffer = Some(device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some(self.label),
-                size: size.next_power_of_two().max(256),
-                usage: self.usage,
-                mapped_at_creation: false,
-            }));
-        }
-        self.buffer.as_ref().unwrap()
-    }
-
-    /// Queues an upload of `bytes` (at least 16, zero padded) and returns the buffer and the
-    /// bound size.
-    fn write<'a>(&mut self, device: &wgpu::Device, uploads: &mut Uploads<'a>, bytes: &'a [u8]) -> (wgpu::Buffer, u64) {
-        const ZERO: [u8; 16] = [0; 16];
-        let bytes = if bytes.is_empty() { &ZERO[..] } else { bytes };
-        let b = self.ensure(device, bytes.len() as u64).clone();
-        uploads.parts.push((b.clone(), bytes));
-        (b, bytes.len() as u64)
-    }
-}
-
-/// Buffer uploads recorded into the command encoder, so they happen in order with the passes
-/// that use them. (`Queue::write_buffer` would apply every upload before the whole
-/// submission, so a later batch recorded into the same submission would overwrite the
-/// buffers of an earlier one before its passes ran.)
-#[derive(Default)]
-struct Uploads<'a> {
-    parts: Vec<(wgpu::Buffer, &'a [u8])>,
-}
-
-impl Uploads<'_> {
-    /// Copies everything through one staging buffer.
-    fn record(self, device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder) {
-        // Every part is a whole number of 4-byte records, as copies require.
-        let size: u64 = self.parts.iter().map(|(_, b)| b.len() as u64).sum();
-        let staging = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("glyphux upload"),
-            size: size.max(wgpu::COPY_BUFFER_ALIGNMENT),
-            usage: wgpu::BufferUsages::COPY_SRC,
-            mapped_at_creation: true,
-        });
-        {
-            let mut view = staging.get_mapped_range_mut(..).expect("mapped at creation");
-            let mut offset = 0;
-            for (_, bytes) in &self.parts {
-                view.slice(offset..offset + bytes.len()).copy_from_slice(bytes);
-                offset += bytes.len();
-            }
-        }
-        staging.unmap();
-        let mut offset = 0;
-        for (buffer, bytes) in &self.parts {
-            encoder.copy_buffer_to_buffer(&staging, offset, buffer, 0, Some(bytes.len() as u64));
-            offset += bytes.len() as u64;
-        }
-    }
-}
-
-/// The generator's buffers, reused from batch to batch.
-struct BufferSet {
-    glyphs: Slot,
-    work: Slot,
-    edges: Slot,
-    contours: Slot,
-    curves: Slot,
-    tiles: Slot,
-    cands: Slot,
-    corners: Slot,
-    field: Slot,
-    stencil: Slot,
-}
-
-impl BufferSet {
-    fn new() -> Self {
-        let up = wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST;
-        let rw = wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC;
-        BufferSet {
-            glyphs: Slot::new("glyphux glyphs", up),
-            work: Slot::new("glyphux work", up),
-            edges: Slot::new("glyphux edges", up),
-            contours: Slot::new("glyphux contours", up),
-            curves: Slot::new("glyphux curves", up),
-            tiles: Slot::new("glyphux tiles", up),
-            cands: Slot::new("glyphux candidates", up),
-            corners: Slot::new("glyphux corners", up),
-            field: Slot::new("glyphux field", rw),
-            stencil: Slot::new("glyphux stencil", rw),
-        }
-    }
-}
-
-pub(crate) fn sized(buffer: &wgpu::Buffer, size: u64) -> wgpu::BindingResource<'_> {
-    wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-        buffer,
-        offset: 0,
-        size: NonZeroU64::new(size),
-    })
-}
-
-/// The uploaded data of a batch of jobs and its output buffer.
-pub struct FieldBatch {
-    /// `vec4<f32>` per texel: channels as configured (MSDF in xyz, true distance in w). The
-    /// buffer is reused by later batches (whose commands overwrite it) and may be larger than
-    /// this batch.
-    pub field: wgpu::Buffer,
-    pub layouts: Vec<FieldLayout>,
-    pub texels: u32,
-    /// Per-glyph records and the work list, with their bound sizes (also bound by later
-    /// passes such as the atlas store).
-    pub(crate) glyphs: (wgpu::Buffer, u64),
-    pub(crate) work: (wgpu::Buffer, u64),
-    bind_group: wgpu::BindGroup,
-    ec_bind_group: Option<wgpu::BindGroup>,
-    pub(crate) stencil: Option<(wgpu::Buffer, u64)>,
-    pub(crate) workgroups: (u32, u32),
-    corner_workgroups: (u32, u32),
-}
-
-/// Compiled pipelines for the distance and error correction passes.
-pub struct FieldGenerator {
-    buffers: BufferSet,
-    fine: wgpu::ComputePipeline,
-    layout: wgpu::BindGroupLayout,
-    ec_layout: wgpu::BindGroupLayout,
-    ec_corners: wgpu::ComputePipeline,
-    ec_protect: wgpu::ComputePipeline,
-    ec_find: wgpu::ComputePipeline,
-    ec_apply: wgpu::ComputePipeline,
-}
-
-/// WGSL source of all passes (shared declarations + entry points).
+/// WGSL source of the field kernels (shared declarations + entry points; see [`Kernel`]).
 pub fn shader_source() -> String {
     let evaluate = include_str!("shaders/evaluate.wgsl");
     let variant = |name: &str, scan: &str| evaluate.replace("EVALUATE", name).replace("SCAN", scan);
@@ -430,426 +287,293 @@ pub fn shader_source() -> String {
     .join("\n")
 }
 
-pub(crate) fn storage_entry(binding: u32, read_only: bool) -> wgpu::BindGroupLayoutEntry {
-    wgpu::BindGroupLayoutEntry {
-        binding,
-        visibility: wgpu::ShaderStages::COMPUTE,
-        ty: wgpu::BindingType::Buffer {
-            ty: wgpu::BufferBindingType::Storage { read_only },
-            has_dynamic_offset: false,
-            min_binding_size: None,
-        },
-        count: None,
-    }
-}
-
-/// Splits `n` workgroups over two dimensions (each at most 65535).
-pub(crate) fn split_workgroups(n: u32) -> (u32, u32) {
+/// Splits `n` workgroups over two dimensions (each at most 65535): all of them along x up to
+/// 65535, else rows of exactly 65535. The kernels count on it (`DISPATCH_X` in
+/// `common.wgsl`) instead of reading the dispatch size.
+pub fn split_workgroups(n: u32) -> (u32, u32) {
     let x = n.clamp(1, 65535);
     (x, n.div_ceil(x).max(1))
 }
 
-impl FieldGenerator {
-    pub fn new(device: &wgpu::Device) -> Self {
-        let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("glyphux"),
-            source: wgpu::ShaderSource::Wgsl(shader_source().into()),
-        });
-        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("glyphux distance"),
-            entries: &[
-                storage_entry(0, true),
-                storage_entry(1, true),
-                storage_entry(2, true),
-                storage_entry(3, true),
-                storage_entry(4, true),
-                storage_entry(5, true),
-                storage_entry(6, true),
-                storage_entry(7, false),
+/// A buffer or texture the kernels bind, at binding [`Self::index`] of group 0.
+///
+/// Bind inputs at exactly their size ([`Batch::bytes`]): the kernels take the lengths of the
+/// work list and of the corners from their bindings (`arrayLength`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Binding {
+    /// [`GlyphRecord`] per job.
+    Glyphs,
+    /// [`WorkItem`] per tile.
+    Work,
+    Edges,
+    Contours,
+    /// Curve data, then each glyph's scanline crossings.
+    Curves,
+    /// Tile edge ranges.
+    Tiles,
+    /// Candidate edges per tile with their culling keys.
+    Candidates,
+    /// Output: `vec4<f32>` per texel ([`FieldLayout`] says where each job's are).
+    Field,
+    /// Error correction flags, one atomic `u32` per texel; zeroed before the corner kernel.
+    Stencil,
+    /// Protected corner texels (error correction).
+    Corners,
+    /// The atlas pages: a write-only storage texture array ([`Kernel::Store`] only).
+    Atlas,
+}
+
+impl Binding {
+    /// Every binding, in binding order.
+    pub const ALL: [Binding; 11] = [
+        Binding::Glyphs,
+        Binding::Work,
+        Binding::Edges,
+        Binding::Contours,
+        Binding::Curves,
+        Binding::Tiles,
+        Binding::Candidates,
+        Binding::Field,
+        Binding::Stencil,
+        Binding::Corners,
+        Binding::Atlas,
+    ];
+
+    /// Binding number in group 0.
+    pub const fn index(self) -> u32 {
+        self as u32
+    }
+
+    /// Whether the kernels only read it (storage buffers declared `read`).
+    pub const fn read_only(self) -> bool {
+        !matches!(self, Binding::Field | Binding::Stencil | Binding::Atlas)
+    }
+}
+
+/// A compute entry point of the field shader ([`shader_source`]) or of the atlas store shader.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Kernel {
+    /// Distances of every texel of every tile (`fine`).
+    Distance,
+    /// Error correction: protect corners, protect edges, find artifacts, apply.
+    CorrectCorners,
+    CorrectProtect,
+    CorrectFind,
+    CorrectApply,
+    /// Copies the field into the atlas pages (`store`, of the atlas store shader).
+    Store,
+}
+
+impl Kernel {
+    /// Every kernel, in the order a batch runs them ([`Batch::kernels`], then the store).
+    pub const ALL: [Kernel; 6] = [
+        Kernel::Distance,
+        Kernel::CorrectCorners,
+        Kernel::CorrectProtect,
+        Kernel::CorrectFind,
+        Kernel::CorrectApply,
+        Kernel::Store,
+    ];
+
+    /// The WGSL entry point.
+    pub const fn entry_point(self) -> &'static str {
+        match self {
+            Kernel::Distance => "fine",
+            Kernel::CorrectCorners => "ec_corners",
+            Kernel::CorrectProtect => "ec_protect",
+            Kernel::CorrectFind => "ec_find",
+            Kernel::CorrectApply => "ec_apply",
+            Kernel::Store => "store",
+        }
+    }
+
+    /// What it binds. (WebGPU allows 8 storage buffers per stage: each kernel binds at most
+    /// that many.)
+    pub const fn bindings(self) -> &'static [Binding] {
+        use Binding as B;
+        match self {
+            Kernel::Distance => &[
+                B::Glyphs,
+                B::Work,
+                B::Edges,
+                B::Contours,
+                B::Curves,
+                B::Tiles,
+                B::Candidates,
+                B::Field,
             ],
-        });
-        let ec_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("glyphux error correction"),
-            entries: &[
-                storage_entry(0, true),
-                storage_entry(1, true),
-                storage_entry(2, true),
-                storage_entry(3, true),
-                storage_entry(4, true),
-                storage_entry(7, false),
-                storage_entry(8, false),
-                storage_entry(9, true),
+            Kernel::CorrectCorners | Kernel::CorrectProtect | Kernel::CorrectFind | Kernel::CorrectApply => &[
+                B::Glyphs,
+                B::Work,
+                B::Edges,
+                B::Contours,
+                B::Curves,
+                B::Field,
+                B::Stencil,
+                B::Corners,
             ],
-        });
-        let pipeline = |layout: &wgpu::BindGroupLayout, entry: &str| {
-            let pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some(entry),
-                bind_group_layouts: &[Some(layout)],
-                immediate_size: 0,
-            });
-            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some(entry),
-                layout: Some(&pl),
-                module: &module,
-                entry_point: Some(entry),
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-                cache: None,
-            })
+            Kernel::Store => &[B::Glyphs, B::Work, B::Field, B::Atlas],
+        }
+    }
+}
+
+/// Prepared jobs packed into the arrays the kernels bind ([`pack`]).
+pub struct Batch {
+    /// Where each job's texels are in the field output, in job order.
+    pub layouts: Vec<FieldLayout>,
+    /// Texels of all jobs.
+    pub texels: u32,
+    /// Workgroups of the per-tile kernels (all but [`Kernel::CorrectCorners`]), split over x
+    /// and y.
+    pub workgroups: (u32, u32),
+    /// Workgroups of [`Kernel::CorrectCorners`].
+    pub corner_workgroups: (u32, u32),
+    /// Whether any job uses error correction (else [`Binding::Stencil`] and
+    /// [`Binding::Corners`] are unused).
+    pub error_correction: bool,
+    glyphs: Vec<GlyphRecord>,
+    work: Vec<WorkItem>,
+    edges: Vec<GpuEdge>,
+    contours: Vec<GpuContour>,
+    curves: Vec<f32>,
+    tiles: Vec<GpuTileGroup>,
+    cands: Vec<u32>,
+    corners: Vec<u32>,
+}
+
+impl Batch {
+    /// The contents of an input binding (`None` for [`Binding::Field`], [`Binding::Stencil`]
+    /// and [`Binding::Atlas`]). Empty arrays are given as 16 zero bytes, as zero-sized
+    /// bindings are not allowed.
+    pub fn bytes(&self, binding: Binding) -> Option<&[u8]> {
+        const ZERO: [u8; 16] = [0; 16];
+        let bytes: &[u8] = match binding {
+            Binding::Glyphs => cast_slice(&self.glyphs),
+            Binding::Work => cast_slice(&self.work),
+            Binding::Edges => cast_slice(&self.edges),
+            Binding::Contours => cast_slice(&self.contours),
+            Binding::Curves => cast_slice(&self.curves),
+            Binding::Tiles => cast_slice(&self.tiles),
+            Binding::Candidates => cast_slice(&self.cands),
+            Binding::Corners => cast_slice(&self.corners),
+            Binding::Field | Binding::Stencil | Binding::Atlas => return None,
         };
-        FieldGenerator {
-            buffers: BufferSet::new(),
-            fine: pipeline(&layout, "fine"),
-            ec_corners: pipeline(&ec_layout, "ec_corners"),
-            ec_protect: pipeline(&ec_layout, "ec_protect"),
-            ec_find: pipeline(&ec_layout, "ec_find"),
-            ec_apply: pipeline(&ec_layout, "ec_apply"),
-            layout,
-            ec_layout,
+        Some(if bytes.is_empty() { &ZERO } else { bytes })
+    }
+
+    /// Bytes to bind for an output buffer: [`Binding::Field`] (16 per texel) and
+    /// [`Binding::Stencil`] (4 per texel; zero it before the kernels run). `None` for the rest.
+    pub fn output_size(&self, binding: Binding) -> Option<u64> {
+        let texels = u64::from(self.texels.max(1));
+        match binding {
+            Binding::Field => Some(texels * 16),
+            Binding::Stencil => Some(texels * 4),
+            _ => None,
         }
     }
 
-    /// Bins a batch of jobs and records their upload into `encoder` (one dispatch evaluates
-    /// all of them). Record the batch's passes ([`Self::encode`]) into the same encoder, or a
-    /// later one, before preparing the next batch: batches share the generator's buffers.
-    pub fn prepare(
-        &mut self,
-        device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
-        jobs: &[FieldJob<'_>],
-    ) -> FieldBatch {
-        let prepared: Vec<PreparedJob> = jobs.iter().map(prepare_job).collect();
-        self.upload(device, encoder, &prepared)
+    /// The kernels to run, in order, with their workgroup counts (x, y). [`Kernel::Store`]
+    /// is not included: an atlas runs it last, with [`Self::workgroups`].
+    pub fn kernels(&self) -> impl Iterator<Item = (Kernel, (u32, u32))> + '_ {
+        let correct = [
+            (Kernel::CorrectCorners, self.corner_workgroups),
+            (Kernel::CorrectProtect, self.workgroups),
+            (Kernel::CorrectFind, self.workgroups),
+            (Kernel::CorrectApply, self.workgroups),
+        ];
+        std::iter::once((Kernel::Distance, self.workgroups))
+            .chain(correct.into_iter().filter(|_| self.error_correction))
     }
+}
 
-    /// [`Self::prepare`] for jobs whose CPU part is done (see [`prepare_job`]).
-    pub fn upload(
-        &mut self,
-        device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
-        jobs: &[PreparedJob],
-    ) -> FieldBatch {
-        let mut glyphs = Vec::with_capacity(jobs.len());
-        let mut work = Vec::new();
-        let mut edges = Vec::new();
-        let mut contours = Vec::new();
-        let mut curves: Vec<f32> = Vec::new();
-        let mut tile_groups = Vec::new();
-        let mut cands: Vec<u32> = Vec::new();
-        let mut layouts = Vec::with_capacity(jobs.len());
-        let mut texels = 0u32;
-        let mut corners: Vec<u32> = Vec::new();
-        let mut any_ec = false;
-        for (gi, job) in jobs.iter().enumerate() {
-            let (gpu, bins) = (&job.gpu, &job.bins);
-            let mut record = job.record;
-            record.edge_offset = edges.len() as u32;
-            record.contour_offset = contours.len() as u32;
-            record.curve_offset = curves.len() as u32;
-            record.scan_offset = (curves.len() + gpu.curves.len()) as u32;
-            record.cand_offset = (cands.len() / 2) as u32;
-            record.tile_offset = tile_groups.len() as u32;
-            record.field_offset = texels;
-            if record.ec_flags != 0 {
-                any_ec = true;
-                corners.extend(job.corners.iter().map(|t| t + texels));
-            }
-            glyphs.push(record);
-            layouts.push(FieldLayout {
-                offset: texels,
-                width: record.width,
-                height: record.height,
-            });
-            texels += record.width * record.height;
-            edges.extend_from_slice(&gpu.edges);
-            contours.extend_from_slice(&gpu.contours);
-            curves.extend_from_slice(&gpu.curves);
-            curves.extend_from_slice(&job.scanlines);
-            // The tile's smallest edge key rides along in its first group record (narrow band).
-            let first = tile_groups.len();
-            tile_groups.extend_from_slice(&bins.ranges);
-            for (t, &k) in bins.min_key.iter().enumerate() {
-                tile_groups[first + t * bins.groups as usize]._pad[0] = k.to_bits();
-            }
-            for (&i, &k) in bins.indices.iter().zip(&bins.keys) {
-                cands.push(i);
-                cands.push(k.to_bits());
-            }
-            if gpu.edges.is_empty() {
-                continue;
-            }
-            for t in 0..bins.tiles_x * bins.tiles_y {
-                work.push(WorkItem {
-                    glyph: gi as u32,
-                    tile: t,
-                });
-            }
+/// Packs prepared jobs into one batch.
+pub fn pack(jobs: &[PreparedJob]) -> Batch {
+    let mut glyphs = Vec::with_capacity(jobs.len());
+    let mut work = Vec::new();
+    let mut edges = Vec::new();
+    let mut contours = Vec::new();
+    let mut curves: Vec<f32> = Vec::new();
+    let mut tiles = Vec::new();
+    let mut cands: Vec<u32> = Vec::new();
+    let mut layouts = Vec::with_capacity(jobs.len());
+    let mut texels = 0u32;
+    let mut corners: Vec<u32> = Vec::new();
+    let mut error_correction = false;
+    for (gi, job) in jobs.iter().enumerate() {
+        let (gpu, bins) = (&job.gpu, &job.bins);
+        let mut record = job.record;
+        record.edge_offset = edges.len() as u32;
+        record.contour_offset = contours.len() as u32;
+        record.curve_offset = curves.len() as u32;
+        record.scan_offset = (curves.len() + gpu.curves.len()) as u32;
+        record.cand_offset = (cands.len() / 2) as u32;
+        record.tile_offset = tiles.len() as u32;
+        record.field_offset = texels;
+        if record.ec_flags != 0 {
+            error_correction = true;
+            corners.extend(job.corners.iter().map(|t| t + texels));
         }
-        let set = &mut self.buffers;
-        let mut uploads = Uploads::default();
-        let up = &mut uploads;
-        let glyph_buf = set.glyphs.write(device, up, cast_slice(&glyphs));
-        let work_buf = set.work.write(device, up, cast_slice(&work));
-        let edge_buf = set.edges.write(device, up, cast_slice(&edges));
-        let contour_buf = set.contours.write(device, up, cast_slice(&contours));
-        let curve_buf = set.curves.write(device, up, cast_slice(&curves));
-        let tile_buf = set.tiles.write(device, up, cast_slice(&tile_groups));
-        let cand_buf = set.cands.write(device, up, cast_slice(&cands));
-        let field_size = (texels.max(1) as u64) * 16;
-        let field = set.field.ensure(device, field_size).clone();
-        let (ec_bind_group, stencil) = if any_ec {
-            let stencil_size = (texels.max(1) as u64) * 4;
-            let stencil = set.stencil.ensure(device, stencil_size).clone();
-            if corners.is_empty() {
-                corners.push(u32::MAX);
-            }
-            let corner_buf = set.corners.write(device, up, cast_slice(&corners));
-            let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("glyphux error correction"),
-                layout: &self.ec_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: sized(&glyph_buf.0, glyph_buf.1),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: sized(&work_buf.0, work_buf.1),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: sized(&edge_buf.0, edge_buf.1),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 3,
-                        resource: sized(&contour_buf.0, contour_buf.1),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 4,
-                        resource: sized(&curve_buf.0, curve_buf.1),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 7,
-                        resource: sized(&field, field_size),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 8,
-                        resource: sized(&stencil, stencil_size),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 9,
-                        resource: sized(&corner_buf.0, corner_buf.1),
-                    },
-                ],
-            });
-            (Some(bg), Some((stencil, stencil_size)))
-        } else {
-            (None, None)
-        };
-        uploads.record(device, encoder);
-        let corner_workgroups = split_workgroups((corners.len() as u32).div_ceil(64));
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("glyphux distance"),
-            layout: &self.layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: sized(&glyph_buf.0, glyph_buf.1),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: sized(&work_buf.0, work_buf.1),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: sized(&edge_buf.0, edge_buf.1),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: sized(&contour_buf.0, contour_buf.1),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: sized(&curve_buf.0, curve_buf.1),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 5,
-                    resource: sized(&tile_buf.0, tile_buf.1),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 6,
-                    resource: sized(&cand_buf.0, cand_buf.1),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 7,
-                    resource: sized(&field, field_size),
-                },
-            ],
+        glyphs.push(record);
+        layouts.push(FieldLayout {
+            offset: texels,
+            width: record.width,
+            height: record.height,
         });
-        FieldBatch {
-            field,
-            layouts,
-            texels,
-            glyphs: glyph_buf,
-            work: work_buf,
-            bind_group,
-            ec_bind_group,
-            stencil,
-            workgroups: split_workgroups(work.len() as u32),
-            corner_workgroups,
+        texels += record.width * record.height;
+        edges.extend_from_slice(&gpu.edges);
+        contours.extend_from_slice(&gpu.contours);
+        curves.extend_from_slice(&gpu.curves);
+        curves.extend_from_slice(&job.scanlines);
+        // The tile's smallest edge key rides along in its first group record (narrow band).
+        let first = tiles.len();
+        tiles.extend_from_slice(&bins.ranges);
+        for (t, &k) in bins.min_key.iter().enumerate() {
+            tiles[first + t * bins.groups as usize]._pad[0] = k.to_bits();
         }
-    }
-
-    /// Records the distance pass of `batch`, followed by error correction where configured.
-    pub fn encode(&self, encoder: &mut wgpu::CommandEncoder, batch: &FieldBatch) {
-        self.encode_profiled(encoder, batch, None);
-    }
-
-    /// [`Self::encode`], timing the distance pass ("glyphux distance") and error correction
-    /// ("glyphux correction") as separate passes when a profiler is given.
-    pub fn encode_profiled(
-        &self,
-        encoder: &mut wgpu::CommandEncoder,
-        batch: &FieldBatch,
-        mut profiler: Option<&mut crate::profile::GpuProfiler>,
-    ) {
-        if let Some((stencil, size)) = &batch.stencil {
-            encoder.clear_buffer(stencil, 0, Some(*size));
+        for (&i, &k) in bins.indices.iter().zip(&bins.keys) {
+            cands.push(i);
+            cands.push(k.to_bits());
         }
-        let (wx, wy) = batch.workgroups;
-        {
-            let scope = profiler.as_deref_mut().and_then(|p| p.scope("glyphux distance"));
-            let tw = scope.and_then(|s| profiler.as_deref().map(|p| p.compute_writes(s)));
-            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("glyphux distance"),
-                timestamp_writes: tw,
+        if gpu.edges.is_empty() {
+            continue;
+        }
+        for t in 0..bins.tiles_x * bins.tiles_y {
+            work.push(WorkItem {
+                glyph: gi as u32,
+                tile: t,
             });
-            pass.set_pipeline(&self.fine);
-            pass.set_bind_group(0, &batch.bind_group, &[]);
-            pass.dispatch_workgroups(wx, wy, 1);
         }
-        if let Some(bg) = &batch.ec_bind_group {
-            let scope = profiler.as_deref_mut().and_then(|p| p.scope("glyphux correction"));
-            let tw = scope.and_then(|s| profiler.as_deref().map(|p| p.compute_writes(s)));
-            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("glyphux correction"),
-                timestamp_writes: tw,
-            });
-            pass.set_bind_group(0, bg, &[]);
-            pass.set_pipeline(&self.ec_corners);
-            pass.dispatch_workgroups(batch.corner_workgroups.0, batch.corner_workgroups.1, 1);
-            for p in [&self.ec_protect, &self.ec_find, &self.ec_apply] {
-                pass.set_pipeline(p);
-                pass.dispatch_workgroups(wx, wy, 1);
-            }
-        }
+    }
+    if error_correction && corners.is_empty() {
+        corners.push(u32::MAX);
+    }
+    Batch {
+        layouts,
+        texels,
+        workgroups: split_workgroups(work.len() as u32),
+        corner_workgroups: split_workgroups((corners.len() as u32).div_ceil(64)),
+        error_correction,
+        glyphs,
+        work,
+        edges,
+        contours,
+        curves,
+        tiles,
+        cands,
+        corners,
     }
 }
 
-/// Copies the whole field of a batch back to the CPU (blocking; for tests and tools).
-#[cfg(not(target_arch = "wasm32"))]
-pub fn read_field(device: &wgpu::Device, queue: &wgpu::Queue, batch: &FieldBatch) -> Vec<[f32; 4]> {
-    let words = read_buffer(device, queue, &batch.field);
-    let mut out: Vec<[f32; 4]> = words
-        .as_chunks::<4>()
-        .0
-        .iter()
-        .map(|c| {
-            [
-                f32::from_bits(c[0]),
-                f32::from_bits(c[1]),
-                f32::from_bits(c[2]),
-                f32::from_bits(c[3]),
-            ]
-        })
-        .collect();
-    out.truncate(batch.texels as usize);
-    out
-}
-
-/// Error correction flags per texel (1 error, 2 protected, 4 needs check); for debugging.
-#[cfg(not(target_arch = "wasm32"))]
-pub fn read_stencil(device: &wgpu::Device, queue: &wgpu::Queue, batch: &FieldBatch) -> Vec<u32> {
-    match &batch.stencil {
-        Some((s, size)) => {
-            let mut v = read_buffer(device, queue, s);
-            v.truncate((*size / 4) as usize);
-            v
+#[cfg(test)]
+mod tests {
+    /// The kernels number work items as `wid.x + wid.y * 65535` (`DISPATCH_X`).
+    #[test]
+    fn dispatch_rows_are_full() {
+        for n in [0, 1, 100, 65_535, 65_536, 200_000] {
+            let (x, y) = super::split_workgroups(n);
+            assert!(x == n.max(1) || x == 65_535, "{n}: {x}");
+            assert!(y == 1 || x == 65_535, "{n}: {x} x {y}");
+            assert!(u64::from(x) * u64::from(y) >= u64::from(n));
         }
-        None => vec![0; batch.texels as usize],
     }
-}
-
-/// Copies layer `layer` of `texture` back (native, blocking): rows top to bottom, tightly
-/// packed, in the texture's own format (RGBA8: 4 bytes per texel). For tests, screenshots and
-/// debugging views of the atlas or of a render target.
-#[cfg(not(target_arch = "wasm32"))]
-pub fn read_texture_layer(device: &wgpu::Device, queue: &wgpu::Queue, texture: &wgpu::Texture, layer: u32) -> Vec<u8> {
-    let (w, h) = (texture.width(), texture.height());
-    let texel = texture.format().block_copy_size(None).expect("a color format");
-    let row = (w * texel).next_multiple_of(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT);
-    let staging = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("glyphux readback"),
-        size: u64::from(row) * u64::from(h),
-        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-        mapped_at_creation: false,
-    });
-    let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
-    enc.copy_texture_to_buffer(
-        wgpu::TexelCopyTextureInfo {
-            texture,
-            mip_level: 0,
-            origin: wgpu::Origin3d { x: 0, y: 0, z: layer },
-            aspect: wgpu::TextureAspect::All,
-        },
-        wgpu::TexelCopyBufferInfo {
-            buffer: &staging,
-            layout: wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(row),
-                rows_per_image: Some(h),
-            },
-        },
-        wgpu::Extent3d {
-            width: w,
-            height: h,
-            depth_or_array_layers: 1,
-        },
-    );
-    queue.submit([enc.finish()]);
-    let slice = staging.slice(..);
-    slice.map_async(wgpu::MapMode::Read, |_| {});
-    device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
-    let data = slice.get_mapped_range().unwrap();
-    let tight = (w * texel) as usize;
-    let out = data.chunks(row as usize).flat_map(|r| &r[..tight]).copied().collect();
-    drop(data);
-    staging.unmap();
-    out
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn read_buffer(device: &wgpu::Device, queue: &wgpu::Queue, buffer: &wgpu::Buffer) -> Vec<u32> {
-    let size = buffer.size();
-    let staging = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("glyphux readback"),
-        size,
-        usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-    let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
-    enc.copy_buffer_to_buffer(buffer, 0, &staging, 0, size);
-    queue.submit([enc.finish()]);
-    let slice = staging.slice(..);
-    slice.map_async(wgpu::MapMode::Read, |_| {});
-    device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
-    let data = slice.get_mapped_range().unwrap();
-    let out = data
-        .as_chunks::<4>()
-        .0
-        .iter()
-        .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
-        .collect();
-    drop(data);
-    staging.unmap();
-    out
 }

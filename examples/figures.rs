@@ -13,7 +13,7 @@ use glyphux::{
     PreparedShape, Projection, Range, Segment, Shape, Transform, Vec2, edge_coloring, generate_msdf, generate_sdf,
     median,
 };
-use glyphux_gpu::{AtlasConfig, GlyphAtlas, GlyphKey, Shaper, ShapingFont, default_device, read_texture_layer, wgpu};
+use glyphux_wgpu::{AtlasConfig, GlyphAtlas, GlyphKey, Shaper, ShapingFont, default_device, read_texture_layer, wgpu};
 
 const ASSETS: &str = "examples/web-demo/assets";
 const OUTLINE: &str = "#e8590c";
@@ -943,7 +943,7 @@ fn shaping(inter: Vec<u8>) -> String {
 fn shaping_panel(
     svg: &mut Svg,
     font: &ShapingFont,
-    line: &glyphux_gpu::ShapedLine,
+    line: &glyphux_wgpu::ShapedLine,
     title: &str,
     text: &str,
     x0: f64,
@@ -1040,7 +1040,7 @@ fn shaping_panel(
 }
 
 /// The cluster (byte offset) the character at `offset` was shaped into.
-fn cluster_of(line: &glyphux_gpu::ShapedLine, offset: usize) -> Option<u32> {
+fn cluster_of(line: &glyphux_wgpu::ShapedLine, offset: usize) -> Option<u32> {
     line.glyphs
         .iter()
         .map(|g| g.cluster)

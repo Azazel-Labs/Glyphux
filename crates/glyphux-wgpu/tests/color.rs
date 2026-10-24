@@ -5,8 +5,8 @@ use glyphux::color::{
     Affine, ColorField, ColorFieldConfig, ColorGlyph, ColorLayer, ColorLine, ColorStop, Extend, Paint,
 };
 use glyphux::io::font::{Font, FontScaling};
-use glyphux_gpu::color::{ColorGlyphInstance, ColorRenderer};
-use glyphux_gpu::{GlyphKey, default_device, read_texture_layer, wgpu};
+use glyphux_wgpu::color::{ColorGlyphInstance, ColorRenderer};
+use glyphux_wgpu::{GlyphKey, default_device, read_texture_layer, wgpu};
 
 #[test]
 fn color_cpu_gpu_parity() {
@@ -209,7 +209,7 @@ fn color_cpu_gpu_parity() {
 
 #[test]
 fn shared_pages_grow_to_cap_and_reuse_space() {
-    use glyphux_gpu::color::ColorAtlasConfig;
+    use glyphux_wgpu::color::ColorAtlasConfig;
     let (_, device, queue) = match default_device() {
         Ok(v) => v,
         Err(e) => {

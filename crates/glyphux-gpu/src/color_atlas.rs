@@ -1,13 +1,16 @@
-//! Rectangle allocation for shared color-distance pages.
+//! Rectangle allocation on the pages of a color glyph atlas (a backend keeps the pages):
+//! best fit from a list of free rectangles, merging neighbors when one is released.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct Rect {
+pub struct Rect {
     pub x: u32,
     pub y: u32,
     pub w: u32,
     pub h: u32,
 }
 
-pub(super) fn allocate(free: &mut Vec<Rect>, w: u32, h: u32) -> Option<Rect> {
+/// Takes the smallest free rectangle that fits `w` by `h` and returns that much of it (its
+/// top-left corner); the rest stays free.
+pub fn allocate(free: &mut Vec<Rect>, w: u32, h: u32) -> Option<Rect> {
     let i = free
         .iter()
         .enumerate()
@@ -34,7 +37,8 @@ pub(super) fn allocate(free: &mut Vec<Rect>, w: u32, h: u32) -> Option<Rect> {
     Some(Rect { x: r.x, y: r.y, w, h })
 }
 
-pub(super) fn release(free: &mut Vec<Rect>, mut r: Rect) {
+/// Returns `r` to the free list, merged with free neighbors of the same width or height.
+pub fn release(free: &mut Vec<Rect>, mut r: Rect) {
     loop {
         let merge = free.iter().enumerate().find_map(|(i, b)| {
             if r.y == b.y && r.h == b.h && (r.x + r.w == b.x || b.x + b.w == r.x) {

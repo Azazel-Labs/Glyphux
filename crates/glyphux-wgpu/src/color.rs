@@ -9,9 +9,7 @@ use glyphux::color::{ColorError, ColorField};
 use std::collections::HashMap;
 use wgpu::util::DeviceExt;
 
-#[path = "color_atlas.rs"]
-mod atlas;
-use atlas::Rect;
+use glyphux_gpu::color_atlas::{self as atlas, Rect};
 
 /// Fixed-size color pages are allocated on demand, up to this bound.
 #[derive(Clone, Copy, Debug)]

@@ -5,27 +5,29 @@ edition.workspace = true
 rust-version = "1.93"
 license.workspace = true
 repository.workspace = true
-description = "GPU (wgpu / WGSL compute) generation of SDF, PSDF, MSDF and MTSDF glyphs for glyphux, with an atlas cache and text rendering"
-keywords = ["msdf", "sdf", "wgpu", "font", "text-rendering"]
+description = "GPU generation of SDF, PSDF, MSDF and MTSDF glyphs for glyphux, independent of the graphics API: atlas cache, batches, WGSL kernels, shaping and layout"
+keywords = ["msdf", "sdf", "gpu", "font", "text-rendering"]
 categories = ["graphics", "rendering"]
 
 [features]
-default = ["wgpu-default", "shaping"]
-# wgpu's default backends (Vulkan, Metal, DX12, GLES, WebGPU). Disable to pick your own via
-# your application's wgpu dependency.
-wgpu-default = ["wgpu/default"]
+default = ["shaping"]
 # OpenType text shaping with HarfRust (HarfBuzz's Rust port): ligatures, kerning (GPOS),
-# marks, complex scripts, right-to-left.
-shaping = ["dep:harfrust", "dep:unicode-bidi"]
-# Animated text scene used by the demos (examples/text_demo.rs, ../../examples/web-demo).
-demo = ["shaping"]
+# marks, complex scripts, right-to-left; paragraph layout with UAX #14 line breaking.
+shaping = ["dep:harfrust", "dep:unicode-bidi", "dep:unicode-linebreak"]
+# The shading functions translated to GLSL with naga (`glsl` module), for backends whose
+# shaders are GLSL-like (Godot).
+glsl = ["dep:naga", "naga/glsl-out"]
+# The compute kernels in SPIR-V with naga (`spirv` module), for backends that build
+# pipelines from SPIR-V (Godot's RenderingDevice).
+spirv = ["dep:naga", "naga/spv-out"]
 
 [dependencies]
 glyphux = { workspace = true, features = ["gpu"] }
 bytemuck.workspace = true
-wgpu.workspace = true
 harfrust = { version = "0.14", default-features = false, features = ["std"], optional = true }
 unicode-bidi = { version = "0.3", optional = true }
+unicode-linebreak = { version = "0.1", optional = true }
+naga = { workspace = true, optional = true }
 
 [dev-dependencies]
 naga.workspace = true

@@ -329,8 +329,8 @@ fn crosses(a: vec3<f32>, b: vec3<f32>, z: f32) -> bool {
 }
 
 // Sets up `cur` for the invocation; false if it has no texel.
-fn ec_texel(wid: vec3<u32>, nwg: vec3<u32>, lid: vec3<u32>) -> bool {
-    let wi = wid.x + wid.y * nwg.x;
+fn ec_texel(wid: vec3<u32>, lid: vec3<u32>) -> bool {
+    let wi = wid.x + wid.y * DISPATCH_X;
     if (wi >= arrayLength(&work)) {
         return false;
     }
@@ -351,8 +351,8 @@ fn ec_texel(wid: vec3<u32>, nwg: vec3<u32>, lid: vec3<u32>) -> bool {
 }
 
 @compute @workgroup_size(64)
-fn ec_corners(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgroups) nwg: vec3<u32>) {
-    let i = gid.x + gid.y * nwg.x * 64u;
+fn ec_corners(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x + gid.y * DISPATCH_X * 64u;
     if (i < arrayLength(&corners)) {
         let t = corners[i];
         if (t != NONE) {
@@ -362,9 +362,8 @@ fn ec_corners(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgr
 }
 
 @compute @workgroup_size(8, 8)
-fn ec_protect(@builtin(workgroup_id) wid: vec3<u32>, @builtin(num_workgroups) nwg: vec3<u32>,
-              @builtin(local_invocation_id) lid: vec3<u32>) {
-    if (!ec_texel(wid, nwg, lid)) {
+fn ec_protect(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>) {
+    if (!ec_texel(wid, lid)) {
         return;
     }
     let idx = cur.base + u32(cur.r * cur.w + cur.x);
@@ -417,9 +416,8 @@ fn ec_protect(@builtin(workgroup_id) wid: vec3<u32>, @builtin(num_workgroups) nw
 }
 
 @compute @workgroup_size(8, 8)
-fn ec_find(@builtin(workgroup_id) wid: vec3<u32>, @builtin(num_workgroups) nwg: vec3<u32>,
-           @builtin(local_invocation_id) lid: vec3<u32>) {
-    if (!ec_texel(wid, nwg, lid)) {
+fn ec_find(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>) {
+    if (!ec_texel(wid, lid)) {
         return;
     }
     let idx = cur.base + u32(cur.r * cur.w + cur.x);
@@ -447,9 +445,8 @@ fn ec_find(@builtin(workgroup_id) wid: vec3<u32>, @builtin(num_workgroups) nwg: 
 }
 
 @compute @workgroup_size(8, 8)
-fn ec_apply(@builtin(workgroup_id) wid: vec3<u32>, @builtin(num_workgroups) nwg: vec3<u32>,
-            @builtin(local_invocation_id) lid: vec3<u32>) {
-    if (!ec_texel(wid, nwg, lid)) {
+fn ec_apply(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>) {
+    if (!ec_texel(wid, lid)) {
         return;
     }
     let idx = cur.base + u32(cur.r * cur.w + cur.x);

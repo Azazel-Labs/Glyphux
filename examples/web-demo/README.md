@@ -1,8 +1,8 @@
-# glyphux-gpu web demo
+# Glyphux web demo
 
 Live: https://azazel-labs.github.io/Glyphux/ (deployed by CI from main).
 
-The `glyphux_gpu::demo::Scene` in a browser canvas on WebGPU. Monochrome glyph fields are
+The `glyphux_wgpu::demo::Scene` in a browser canvas on WebGPU. Monochrome glyph fields are
 generated on the GPU the first time they are needed at a size level. Color emoji rendering
 compiles its bundled COLR outlines once at startup, then evaluates cached region-distance
 fields and analytic paints on the GPU.

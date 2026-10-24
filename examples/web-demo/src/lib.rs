@@ -1,4 +1,4 @@
-//! WebGPU demo: the shared `glyphux_gpu::demo::Scene` drawn into a `<canvas id="glyphux">` every
+//! WebGPU demo: the shared `glyphux_wgpu::demo::Scene` drawn into a `<canvas id="glyphux">` every
 //! animation frame. Glyph fields are generated on the GPU on first use at each size level.
 //! The page adds fonts and sets the text through the exported functions below.
 //!
@@ -8,8 +8,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use glyphux_gpu::ShapingFont;
-use glyphux_gpu::demo::Scene;
+use glyphux_wgpu::ShapingFont;
+use glyphux_wgpu::demo::Scene;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 
@@ -84,8 +84,8 @@ pub fn set_show_atlas(show: bool) {
 /// The face of a font file or collection whose PostScript name is `postscript_name` (the
 /// first face if no name is given).
 fn face_index(data: &[u8], postscript_name: Option<&str>) -> Result<u32, String> {
-    use glyphux_gpu::glyphux::io::font::ttf_parser::name_id;
-    use glyphux_gpu::glyphux::io::font::{Font, FontScaling};
+    use glyphux_wgpu::glyphux::io::font::ttf_parser::name_id;
+    use glyphux_wgpu::glyphux::io::font::{Font, FontScaling};
     // Each face is parsed once, until one fails (past the last face of a collection).
     let mut faces = (0..256).map_while(|i| {
         Font::from_bytes(data, i, FontScaling::EmNormalized)
@@ -176,7 +176,7 @@ async fn run() -> Result<(), String> {
         .request_device(&wgpu::DeviceDescriptor {
             label: Some("glyphux demo"),
             required_features: wgpu::Features::empty(),
-            required_limits: glyphux_gpu::required_limits().using_resolution(adapter.limits()),
+            required_limits: glyphux_wgpu::required_limits().using_resolution(adapter.limits()),
             experimental_features: wgpu::ExperimentalFeatures::disabled(),
             memory_hints: wgpu::MemoryHints::MemoryUsage,
             trace: wgpu::Trace::Off,

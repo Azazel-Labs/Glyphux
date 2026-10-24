@@ -1,0 +1,35 @@
+[package]
+name = "glyphux-wgpu"
+version.workspace = true
+edition.workspace = true
+rust-version = "1.93"
+license.workspace = true
+repository.workspace = true
+description = "wgpu backend of glyphux-gpu: the glyph atlas texture, field generation passes, and MSDF text and color glyph renderers (native and WebGPU)"
+keywords = ["msdf", "sdf", "wgpu", "font", "text-rendering"]
+categories = ["graphics", "rendering"]
+
+[features]
+default = ["wgpu-default", "shaping"]
+# wgpu's default backends (Vulkan, Metal, DX12, GLES, WebGPU). Disable to pick your own via
+# your application's wgpu dependency.
+wgpu-default = ["wgpu/default"]
+# OpenType text shaping (glyphux-gpu's `shaping` feature).
+shaping = ["glyphux-gpu/shaping"]
+# glyphux-gpu's shading functions in GLSL (`glyphux_gpu::glsl`), for drawing in a host
+# engine's own shaders.
+glsl = ["glyphux-gpu/glsl"]
+# glyphux-gpu's kernels in SPIR-V (`glyphux_gpu::spirv`), for running them on a host engine's
+# own device.
+spirv = ["glyphux-gpu/spirv"]
+# Animated text scene used by the demos (examples/text_demo.rs, ../../examples/web-demo).
+demo = ["shaping"]
+
+[dependencies]
+glyphux = { workspace = true, features = ["gpu"] }
+glyphux-gpu = { workspace = true, default-features = false }
+bytemuck.workspace = true
+wgpu.workspace = true
+
+[lints]
+workspace = true

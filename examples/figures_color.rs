@@ -229,8 +229,8 @@ pub(super) fn write(out: &str) {
 
 /// Capture the actual shared GPU page, with vector annotations and a pixel-exact crop.
 fn shared_atlas(out: &str, fields: &[&ColorField]) {
-    use glyphux_gpu::color::ColorRenderer;
-    use glyphux_gpu::{GlyphKey, default_device, read_texture_layer, wgpu};
+    use glyphux_wgpu::color::ColorRenderer;
+    use glyphux_wgpu::{GlyphKey, default_device, read_texture_layer, wgpu};
     let (_, device, queue) = default_device().expect("GPU required for shared color atlas figure");
     let mut renderer = ColorRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
     assert_eq!(renderer.page_count(), 0);

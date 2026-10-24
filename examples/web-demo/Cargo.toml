@@ -4,7 +4,7 @@ version = "0.3.0"
 edition = "2024"
 publish = false
 license = "MIT"
-description = "Browser (WebGPU) demo of glyphux-gpu: glyph fields generated on the GPU every frame as needed"
+description = "Browser (WebGPU) demo of glyphux-wgpu: glyph fields generated on the GPU every frame as needed"
 
 [workspace]
 
@@ -12,7 +12,7 @@ description = "Browser (WebGPU) demo of glyphux-gpu: glyph fields generated on t
 crate-type = ["cdylib"]
 
 [dependencies]
-glyphux-gpu = { path = "../../crates/glyphux-gpu", default-features = false, features = ["demo"] }
+glyphux-wgpu = { path = "../../crates/glyphux-wgpu", default-features = false, features = ["demo"] }
 # WebGPU only: the generator is compute shaders, which WebGL 2 lacks.
 wgpu = { version = "30.0.1", default-features = false, features = ["std", "wgsl", "webgpu"] }
 wasm-bindgen = "0.2"

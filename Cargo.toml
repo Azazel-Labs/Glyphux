@@ -1,7 +1,14 @@
 [workspace]
 resolver = "3"
-members = ["crates/glyphux", "crates/glyphux-atlas", "crates/glyphux-cli", "crates/glyphux-gpu", "examples"]
-# wasm32-only (its .cargo/config.toml sets the target), so it is its own workspace.
+members = [
+    "crates/glyphux",
+    "crates/glyphux-atlas",
+    "crates/glyphux-cli",
+    "crates/glyphux-gpu",
+    "crates/glyphux-wgpu",
+    "examples",
+]
+# Its own workspace: the web demo is wasm32-only (its .cargo/config.toml sets the target).
 exclude = ["examples/web-demo"]
 
 [workspace.package]
@@ -15,6 +22,7 @@ repository = "https://github.com/Azazel-Labs/Glyphux"
 glyphux = { path = "crates/glyphux", version = "0.3.0" }
 glyphux-atlas = { path = "crates/glyphux-atlas", version = "0.3.0" }
 glyphux-gpu = { path = "crates/glyphux-gpu", version = "0.3.0" }
+glyphux-wgpu = { path = "crates/glyphux-wgpu", version = "0.3.0" }
 bytemuck = { version = "1.25", default-features = false, features = ["derive"] }
 # naga must stay on the version wgpu uses (glyphux-gpu validates its shaders with it).
 wgpu = { version = "30.0.1", default-features = false, features = ["std", "wgsl"] }

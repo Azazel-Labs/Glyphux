@@ -47,9 +47,8 @@ fn correct_sign(g: Glyph, d: vec4<f32>, r: u32, px: f32) -> vec4<f32> {
 }
 
 @compute @workgroup_size(8, 8)
-fn fine(@builtin(workgroup_id) wid: vec3<u32>, @builtin(num_workgroups) nwg: vec3<u32>,
-        @builtin(local_invocation_id) lid: vec3<u32>) {
-    let wi = wid.x + wid.y * nwg.x;
+fn fine(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>) {
+    let wi = wid.x + wid.y * DISPATCH_X;
     if (wi >= arrayLength(&work)) {
         return;
     }

@@ -103,3 +103,22 @@ fn language_changes_reuse_only_compatible_plans() {
         );
     }
 }
+
+/// Fallback runs: text stays in the primary font, other characters go to the first font that
+/// has them, and punctuation stays in the current run's font.
+#[test]
+fn split_runs_fall_back_per_character() {
+    let load = |name: &str| {
+        std::fs::read(format!(
+            "{}/../../examples/web-demo/assets/{name}",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap()
+    };
+    let latin = ShapingFont::new(0, Arc::new(load("InterVariable-Latin.ttf")), 0).unwrap();
+    let arabic = ShapingFont::new(1, Arc::new(load("NotoSansArabic-Subset.ttf")), 0).unwrap();
+    let text = "Hi تكبير.";
+    let runs = glyphux_gpu::split_runs(&[&latin, &arabic], text);
+    let fonts: Vec<(usize, &str)> = runs.iter().map(|(f, r)| (*f, &text[r.clone()])).collect();
+    assert_eq!(fonts, [(0, "Hi "), (1, "تكبير."),]);
+}

@@ -1,4 +1,5 @@
-// MSDF / MTSDF text rendering: one instanced quad per glyph.
+// MSDF / MTSDF text rendering with wgpu: one instanced quad per glyph. Each pixel samples
+// the atlas and leaves the rest to text_core.wgsl, which comes first in the module.
 
 struct Globals {
     // Target size in pixels.
@@ -73,93 +74,34 @@ fn vs(@builtin(vertex_index) vi: u32, inst: Instance) -> VsOut {
     return out;
 }
 
-fn median3(a: f32, b: f32, c: f32) -> f32 {
-    return max(min(a, b), min(max(a, b), c));
-}
-
 @fragment
 fn fs(in: VsOut) -> @location(0) vec4<f32> {
-    let s = textureSample(atlas, atlas_sampler, in.uv, in.layer);
-    // Texture coordinates per screen pixel along x and y.
-    let duv_dx = dpdx(in.uv);
-    let duv_dy = dpdy(in.uv);
-    // Screen pixels per field texel (> 1 when magnified).
-    let size = vec2<f32>(textureDimensions(atlas).xy);
-    let texels_per_px = (abs(duv_dx) + abs(duv_dy)) * size;
-    let px_per_texel = 2.0 / max(texels_per_px.x + texels_per_px.y, 1e-6);
-    let px_range = select(globals.px_range, in.params.w, in.params.w > 0.0);
-    let screen_range = max(px_range * px_per_texel, 1.0);
-    // Signed distance in screen pixels (positive inside), with an optional weight offset.
-    let weight = in.params.x;
-    let sd = (median3(s.r, s.g, s.b) - 0.5) * screen_range + weight;
-    var fill = clamp(sd + 0.5, 0.0, 1.0);
-    // Distance for effects outside the glyph: the true distance where available (rounded
-    // corners), else the median.
-    var sd_outside = sd;
-    var rgb = in.color.rgb;
-    var alpha = in.color.a * fill;
-    if (globals.has_true_distance > 0.5) {
-        let sdt = (s.a - 0.5) * screen_range + weight;
-        sd_outside = sdt;
-        // Below about one texel per pixel the multi-channel corners alias; blend towards the
-        // true distance.
-        let k = clamp(px_per_texel * 2.0 - 1.0, 0.0, 1.0);
-        fill = mix(clamp(sdt + 0.5, 0.0, 1.0), fill, k);
-        alpha = in.color.a * fill;
-        let ow = in.outline.w;
-        if (in.params.y > 0.0 && ow > 0.0) {
-            // Outline band outside the fill. (The field only covers half the range outside
-            // the shape.)
-            let width = min(in.params.y, 0.5 * screen_range - 1.0);
-            let band = clamp(sdt + width + 0.5, 0.0, 1.0);
-            let oa = ow * band * (1.0 - fill);
-            rgb = (in.color.rgb * alpha + in.outline.rgb * oa) / max(alpha + oa, 1e-6);
-            alpha = alpha + oa;
-        }
+    var g: TextGlyph;
+    g.color = in.color;
+    g.outline = in.outline;
+    g.params = in.params;
+    g.glow = in.glow;
+    g.shadow = in.shadow;
+    g.shadow_params = in.shadow_params;
+    g.uv_rect = in.uv_rect;
+    var p: TextPixel;
+    p.uv = in.uv;
+    p.duv_dx = dpdx(in.uv);
+    p.duv_dy = dpdy(in.uv);
+    p.atlas_size = vec2<f32>(textureDimensions(atlas).xy);
+    p.px_range = globals.px_range;
+    p.has_true_distance = globals.has_true_distance;
+    var v: TextSamples;
+    v.center = textureSample(atlas, atlas_sampler, in.uv, in.layer);
+    let t = text_taps(g, p, v.center);
+    if (t.glow > 0.5) {
+        v.glow_a = textureSampleLevel(atlas, atlas_sampler, t.glow_a, in.layer, 0.0);
+        v.glow_b = textureSampleLevel(atlas, atlas_sampler, t.glow_b, in.layer, 0.0);
+        v.glow_c = textureSampleLevel(atlas, atlas_sampler, t.glow_c, in.layer, 0.0);
+        v.glow_d = textureSampleLevel(atlas, atlas_sampler, t.glow_d, in.layer, 0.0);
     }
-    // Glow under the glyph, fading to nothing before the edge of the field's range (beyond
-    // it the distance is clamped and would show the quad).
-    let radius = min(in.params.z, 0.5 * screen_range - 0.5);
-    if (radius > 0.0 && in.glow.a > 0.0) {
-        let falloff = clamp(1.0 + sd_outside / radius, 0.0, 1.0);
-        var glow_value = falloff * falloff;
-        // Widen the filter outside the shape without changing the sharp fill. Filter
-        // glow opacity, not signed distance. Four extra samples share the center weight.
-        let spread = min(radius * 0.2, max(-sd_outside, 0.0) * 0.35);
-        if (spread > 0.0) {
-            var total = 0.0;
-            for (var i = 0u; i < 4u; i++) {
-                let offset = vec2<f32>(select(-1.0, 1.0, (i & 1u) != 0u), select(-1.0, 1.0, (i & 2u) != 0u));
-                let uv = clamp(in.uv + (duv_dx * offset.x + duv_dy * offset.y) * spread,
-                    min(in.uv_rect.xy, in.uv_rect.zw), max(in.uv_rect.xy, in.uv_rect.zw));
-                let v = textureSampleLevel(atlas, atlas_sampler, uv, in.layer, 0.0);
-                let d = (select(median3(v.r, v.g, v.b), v.a, globals.has_true_distance > 0.5) - 0.5) * screen_range + weight;
-                let f = clamp(1.0 + d / radius, 0.0, 1.0);
-                total += f * f;
-            }
-            // Keep the original support so filtering cannot expose the glyph quad.
-            glow_value = mix(glow_value, total * 0.25, 0.8) * smoothstep(0.0, 0.15, falloff);
-        }
-        let ga = in.glow.a * glow_value * (1.0 - alpha);
-        rgb = (rgb * alpha + in.glow.rgb * ga) / max(alpha + ga, 1e-6);
-        alpha = alpha + ga;
+    if (t.shadow > 0.5) {
+        v.shadow = textureSampleLevel(atlas, atlas_sampler, t.shadow_uv, in.layer, 0.0);
     }
-    // Drop shadow under everything: the glyph's distance where this pixel would be without
-    // the offset (clamped to the glyph's rectangle, whose padding reads as far outside).
-    if (in.shadow.a > 0.0) {
-        let back = duv_dx * in.shadow_params.x + duv_dy * in.shadow_params.y;
-        let uv = clamp(in.uv - back, min(in.uv_rect.xy, in.uv_rect.zw), max(in.uv_rect.xy, in.uv_rect.zw));
-        let ss = textureSampleLevel(atlas, atlas_sampler, uv, in.layer, 0.0);
-        var sds = (median3(ss.r, ss.g, ss.b) - 0.5) * screen_range + weight;
-        if (globals.has_true_distance > 0.5) {
-            sds = (ss.a - 0.5) * screen_range + weight;
-        }
-        let sa = in.shadow.a * clamp(0.5 + sds / max(in.shadow_params.z, 1.0), 0.0, 1.0) * (1.0 - alpha);
-        rgb = (rgb * alpha + in.shadow.rgb * sa) / max(alpha + sa, 1e-6);
-        alpha = alpha + sa;
-    }
-    // Atlas page view: the raw field. Chosen without branching: an early return for it at the
-    // top miscompiled the regular path in Chrome (D3D12), tinting magnified text with the
-    // field's channels.
-    return select(vec4<f32>(rgb, alpha), vec4<f32>(s.rgb, 1.0), in.shadow_params.w > 0.5);
+    return text_color(g, p, v);
 }

@@ -3,9 +3,9 @@
 //! usage: glyph_zoom <font> <text> <level> <px> <out.png> [ec: auto|off|fast|full]
 use std::sync::Arc;
 
-use glyphux_gpu::text::{Align, TextStyle, layout_text};
-use glyphux_gpu::units::{Units, px};
-use glyphux_gpu::{AtlasConfig, GlyphAtlas, Shaper, ShapingFont, TextRenderer, default_device, glyphux, wgpu};
+use glyphux_wgpu::text::{Align, TextStyle, layout_text};
+use glyphux_wgpu::units::{Units, px};
+use glyphux_wgpu::{AtlasConfig, GlyphAtlas, Shaper, ShapingFont, TextRenderer, default_device, glyphux, wgpu};
 
 const USAGE: &str = "usage: glyph_zoom <font> <text> <level> <px> <out.png> [ec: auto|off|fast|full]";
 
@@ -132,6 +132,6 @@ fn main() {
         renderer.render(&mut pass);
     }
     queue.submit([enc.finish()]);
-    let pixels = glyphux_gpu::read_texture_layer(&device, &queue, &target, 0);
+    let pixels = glyphux_wgpu::read_texture_layer(&device, &queue, &target, 0);
     std::fs::write(&a[5], glyphux::io::png::encode_png(w, h, 4, &pixels)).unwrap();
 }

@@ -106,6 +106,11 @@ impl ShapingFont {
         )
     }
 
+    /// The glyph `c` maps to, through the shaper's own (cached) character map.
+    pub fn glyph(&self, c: char) -> Option<u32> {
+        self.instance.charmap().map_unicode(c).map(harfrust::GlyphId::to_u32)
+    }
+
     /// Whether the font maps `c` to a glyph (for choosing a fallback font per line), through
     /// the shaper's own (cached) character map.
     pub fn has_glyph(&self, c: char) -> bool {
@@ -142,6 +147,43 @@ pub struct ShapedLine {
 
 /// Shape plans kept by a [`Shaper`]; a line typically needs one or two.
 const PLAN_CACHE: usize = 32;
+
+/// Splits `text` into runs by font for font fallback, as byte ranges with the index of the
+/// font in `fonts` (tried in order; the first is the primary): letters, digits and
+/// whitespace go to the primary font if it has them; anything else stays in the current
+/// run's font if that has it, else goes to the first font that has it (the primary if none
+/// does). Shape each run in its font ([`Shaper::shape_line`]) and place them one after another.
+pub fn split_runs(fonts: &[&ShapingFont], text: &str) -> Vec<(usize, std::ops::Range<usize>)> {
+    split_runs_with(fonts.len(), text, |f, c| fonts[f].has_glyph(c))
+}
+
+/// [`split_runs`] for `count` fonts, with `has(font, c)` saying whether a font can draw a
+/// character (e.g. also checking that its color glyph is supported).
+pub fn split_runs_with(
+    count: usize,
+    text: &str,
+    mut has: impl FnMut(usize, char) -> bool,
+) -> Vec<(usize, std::ops::Range<usize>)> {
+    let mut runs: Vec<(usize, std::ops::Range<usize>)> = Vec::new();
+    if count == 0 {
+        return runs;
+    }
+    for (i, c) in text.char_indices() {
+        let current = runs.last().map(|r| r.0);
+        let f = if (c.is_alphanumeric() || c.is_whitespace()) && has(0, c) {
+            0
+        } else if let Some(f) = current.filter(|&f| has(f, c)) {
+            f
+        } else {
+            (0..count).find(|&f| has(f, c)).unwrap_or(0)
+        };
+        match runs.last_mut() {
+            Some(r) if r.0 == f => r.1.end = i + c.len_utf8(),
+            _ => runs.push((f, i..i + c.len_utf8())),
+        }
+    }
+    runs
+}
 
 /// Reusable shaping state (buffers, compiled shape plans), and the features to apply.
 pub struct Shaper {
@@ -222,6 +264,95 @@ impl Shaper {
         self.plans.len() - 1
     }
 
+    /// Script runs of `text[range]`, in logical order (common characters join their
+    /// neighbors' run).
+    pub(crate) fn script_runs(
+        &mut self,
+        text: &str,
+        range: std::ops::Range<usize>,
+    ) -> Vec<(std::ops::Range<usize>, Option<harfrust::Script>)> {
+        let mut pieces = Vec::new();
+        let mut start = range.start;
+        let mut script = None;
+        for (i, c) in text[range.clone()].char_indices() {
+            let i = i + range.start;
+            let s = self.script_of(c);
+            if let (Some(s), Some(cur)) = (s, script)
+                && s != cur
+            {
+                pieces.push((start..i, script));
+                start = i;
+            }
+            if script.is_none() {
+                script = s;
+            } else if let Some(s) = s {
+                script = Some(s);
+            }
+        }
+        pieces.push((start..range.end, script));
+        pieces
+    }
+
+    /// Shapes `text[range]` in one direction and script, with `text[context]` around it as
+    /// context, and appends its glyphs to `out` starting at pen position `pen` (em). Returns
+    /// the pen position after them. Clusters are byte offsets in `text`.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn shape_piece(
+        &mut self,
+        font: &ShapingFont,
+        text: &str,
+        range: std::ops::Range<usize>,
+        context: std::ops::Range<usize>,
+        rtl: bool,
+        script: Option<harfrust::Script>,
+        mut pen: f32,
+        out: &mut Vec<ShapedGlyph>,
+    ) -> f32 {
+        let (a, b) = (range.start, range.end);
+        let scale = 1.0 / font.units_per_em;
+        let shaper_font = ShaperFont::new(&font.instance);
+        let mut buf = self.buffer.take().unwrap_or_default();
+        buf.clear();
+        for (offset, c) in text[a..b].char_indices() {
+            buf.push(c as u32, (a + offset) as u32);
+        }
+        buf.set_pre_context(&text[context.start..a]);
+        buf.set_post_context(&text[b..context.end]);
+        buf.set_direction(if rtl {
+            Direction::RightToLeft
+        } else {
+            Direction::LeftToRight
+        });
+        buf.set_script(script);
+        buf.set_language(self.language.clone());
+        let mut flags = BufferFlags::empty();
+        if a == context.start {
+            flags |= BufferFlags::BEGINNING_OF_TEXT;
+        }
+        if b == context.end {
+            flags |= BufferFlags::END_OF_TEXT;
+        }
+        buf.set_flags(flags);
+        buf.guess_segment_properties();
+        let i = self.plan(font, &buf);
+        let plan = &self.plans[i].1;
+        let options = ShapeOptions::new().plan(Some(plan)).features(&self.features);
+        if harfrust::shape(&shaper_font, &mut buf, options).is_ok() {
+            for (info, pos) in buf.glyph_infos().iter().zip(buf.glyph_positions()) {
+                out.push(ShapedGlyph {
+                    glyph: info.glyph_id,
+                    cluster: info.cluster,
+                    x: pen + pos.x_offset as f32 * scale,
+                    y: pos.y_offset as f32 * scale,
+                    advance: pos.x_advance as f32 * scale,
+                });
+                pen += pos.x_advance as f32 * scale;
+            }
+        }
+        self.buffer = Some(buf);
+        pen
+    }
+
     /// Shapes one line of text (no line breaks; a `\n` ends the line).
     pub fn shape_line(&mut self, font: &ShapingFont, text: &str) -> ShapedLine {
         let text = text.split('\n').next().unwrap_or("");
@@ -242,74 +373,15 @@ impl Shaper {
         };
         out.rtl = para.level.is_rtl();
         let (levels, runs) = bidi.visual_runs(para, para.range.clone());
-        let scale = 1.0 / font.units_per_em;
-        let shaper_font = ShaperFont::new(&font.instance);
         let mut pen = 0.0f32;
         for run in runs {
             let rtl = levels[run.start].is_rtl();
-            // Script runs inside the bidi run, in logical order.
-            let mut pieces: Vec<(usize, usize, Option<harfrust::Script>)> = Vec::new();
-            let mut start = run.start;
-            let mut script = None;
-            for (i, c) in text[run.clone()].char_indices() {
-                let i = i + run.start;
-                let s = self.script_of(c);
-                if let (Some(s), Some(cur)) = (s, script)
-                    && s != cur
-                {
-                    pieces.push((start, i, script));
-                    start = i;
-                }
-                if script.is_none() {
-                    script = s;
-                } else if let Some(s) = s {
-                    script = Some(s);
-                }
-            }
-            pieces.push((start, run.end, script));
+            let mut pieces = self.script_runs(text, run);
             if rtl {
                 pieces.reverse();
             }
-            for (a, b, script) in pieces {
-                let mut buf = self.buffer.take().unwrap_or_default();
-                buf.clear();
-                for (offset, c) in text[a..b].char_indices() {
-                    buf.push(c as u32, (a + offset) as u32);
-                }
-                buf.set_pre_context(&text[..a]);
-                buf.set_post_context(&text[b..]);
-                buf.set_direction(if rtl {
-                    Direction::RightToLeft
-                } else {
-                    Direction::LeftToRight
-                });
-                buf.set_script(script);
-                buf.set_language(self.language.clone());
-                let mut flags = BufferFlags::empty();
-                if a == 0 {
-                    flags |= BufferFlags::BEGINNING_OF_TEXT;
-                }
-                if b == text.len() {
-                    flags |= BufferFlags::END_OF_TEXT;
-                }
-                buf.set_flags(flags);
-                buf.guess_segment_properties();
-                let i = self.plan(font, &buf);
-                let plan = &self.plans[i].1;
-                let options = ShapeOptions::new().plan(Some(plan)).features(&self.features);
-                if harfrust::shape(&shaper_font, &mut buf, options).is_ok() {
-                    for (info, pos) in buf.glyph_infos().iter().zip(buf.glyph_positions()) {
-                        out.glyphs.push(ShapedGlyph {
-                            glyph: info.glyph_id,
-                            cluster: info.cluster,
-                            x: pen + pos.x_offset as f32 * scale,
-                            y: pos.y_offset as f32 * scale,
-                            advance: pos.x_advance as f32 * scale,
-                        });
-                        pen += pos.x_advance as f32 * scale;
-                    }
-                }
-                self.buffer = Some(buf);
+            for (range, script) in pieces {
+                pen = self.shape_piece(font, text, range, 0..text.len(), rtl, script, pen, &mut out.glyphs);
             }
         }
         out.width = pen;

@@ -1,8 +1,8 @@
 //! Render a shaped COLR glyph using the CPU decoder or the GPU color pipeline.
 //! usage: color_glyph <font.ttf> <text> [output.png] [size] [cpu|gpu]
 use glyphux::color::{ColorField, ColorFieldConfig};
-use glyphux_gpu::color::{ColorGlyphInstance, ColorRenderer};
-use glyphux_gpu::{GlyphKey, Shaper, ShapingFont, default_device, read_texture_layer, wgpu};
+use glyphux_wgpu::color::{ColorGlyphInstance, ColorRenderer};
+use glyphux_wgpu::{GlyphKey, Shaper, ShapingFont, default_device, read_texture_layer, wgpu};
 use std::sync::Arc;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

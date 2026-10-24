@@ -7,7 +7,8 @@ A tag must exactly match the workspace version, for example `v0.3.0`.
 
 Add a crates.io API token as the repository Actions secret
 `CARGO_REGISTRY_TOKEN`. It needs permission to publish `glyphux`,
-`glyphux-atlas`, `glyphux-gpu` and `glyphux-cli`.
+`glyphux-atlas`, `glyphux-gpu`, `glyphux-wgpu` and `glyphux-cli`. `glyphux-wgpu` has
+not been published yet; its first publish needs a token that may publish new crates.
 
 ## Release
 

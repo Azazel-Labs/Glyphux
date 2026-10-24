@@ -9,9 +9,8 @@ const STORE_MIN: f32 = STORE_LO;
 const STORE_MAX: f32 = STORE_HI;
 
 @compute @workgroup_size(8, 8)
-fn store(@builtin(workgroup_id) wid: vec3<u32>, @builtin(num_workgroups) nwg: vec3<u32>,
-         @builtin(local_invocation_id) lid: vec3<u32>) {
-    let wi = wid.x + wid.y * nwg.x;
+fn store(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>) {
+    let wi = wid.x + wid.y * DISPATCH_X;
     if (wi >= arrayLength(&work)) {
         return;
     }

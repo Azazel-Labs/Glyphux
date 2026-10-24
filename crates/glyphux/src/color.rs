@@ -289,5 +289,15 @@ pub fn srgb_to_linear(v: f32) -> f32 {
     }
 }
 
-/// WGSL decoder for the version 1 color atlas buffer layout.
-pub const COLOR_SHADER: &str = include_str!("color/color.wgsl");
+/// WGSL decoder for the version 1 color atlas buffer layout: [`COLOR_CORE`] followed by
+/// its bindings and entry points for wgpu.
+pub const COLOR_SHADER: &str = concat!(
+    include_str!("color/color_core.wgsl"),
+    "
+",
+    include_str!("color/color.wgsl")
+);
+
+/// The color shading functions of [`COLOR_SHADER`] without bindings or entry points, for
+/// backends that read the tables their own way (see the file's comments).
+pub const COLOR_CORE: &str = include_str!("color/color_core.wgsl");

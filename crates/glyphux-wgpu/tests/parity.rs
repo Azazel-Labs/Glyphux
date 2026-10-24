@@ -1,9 +1,9 @@
 //! GPU vs CPU parity (skipped when no adapter is available): a few shapes on every run, and a
-//! whole font on demand (`cargo test --release -p glyphux-gpu --test parity -- --ignored`;
+//! whole font on demand (`cargo test --release -p glyphux-wgpu --test parity -- --ignored`;
 //! `GLYPHUX_TEST_FONT` picks the font, default: the Inter font of the web demo).
 use glyphux::io::font::{Font, FontScaling};
 use glyphux::*;
-use glyphux_gpu::*;
+use glyphux_wgpu::*;
 
 const SHAPES: &[&str] = &[
     // Square, overlapping squares, a curved blob (quadratic + cubic), a ring.

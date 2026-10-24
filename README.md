@@ -46,7 +46,11 @@ The generator supports true SDF, pseudo-SDF, **multi-channel SDF (MSDF)** and
     </tr>
     <tr>
       <td><a href="crates/glyphux-gpu"><code>glyphux-gpu</code></a></td>
-      <td>The same fields generated on the GPU with wgpu 30 compute shaders (native and WebGPU), a glyph atlas that picks each glyph's field resolution from the size it is drawn at, text shaping, and an MSDF text renderer. The only crate that depends on wgpu.</td>
+      <td>The same fields generated on the GPU, independent of the graphics API: a glyph atlas that picks each glyph's field resolution from the size it is drawn at, the batches and WGSL of the compute kernels, text shaping and layout. Backends run it.</td>
+    </tr>
+    <tr>
+      <td><a href="crates/glyphux-wgpu"><code>glyphux-wgpu</code></a></td>
+      <td>The wgpu 30 backend (native and WebGPU): the atlas texture, the compute passes, and MSDF text and color glyph renderers. The only crate that depends on wgpu.</td>
     </tr>
   </tbody>
 </table>
@@ -334,15 +338,17 @@ atlas.image.save("atlas.png", glyphux::io::ImageFormat::Png)?;
 std::fs::write("atlas.json", layout::to_json(&font, &atlas.layout, &config))?;
 ```
 
-## GPU generation (`glyphux-gpu`)
+## GPU generation (`glyphux-gpu`, `glyphux-wgpu`)
 
 For apps that generate glyph fields while running (see [How it works](#how-it-works)).
 The CPU splits each field into 8×8 tiles and lists the edges each tile needs to check.
 The GPU calculates distances for all newly requested glyphs together, then corrects
 errors and writes the results into the atlas. Its output matches the CPU's to about
 3·10⁻⁶, apart from ties where two edges are equally close. `GlyphAtlas` keeps fields
-at resolutions suited to the displayed text size; `TextRenderer` draws them. See
-[its README](crates/glyphux-gpu/README.md) and the [web demo](examples/web-demo).
+at resolutions suited to the displayed text size; `TextRenderer` draws them.
+[glyphux-gpu](crates/glyphux-gpu/README.md) holds everything independent of the graphics
+API; backends run it, such as [glyphux-wgpu](crates/glyphux-wgpu/README.md) (used by the
+[web demo](examples/web-demo)).
 
 ```
 cargo run --release --bin text_demo -- examples/web-demo/assets/Inter-Regular.otf
@@ -422,7 +428,7 @@ We calculate each paint's color at that position, combine the paints in their st
 order, then use the outer-edge distance to fade pixels along the silhouette. Empty
 tiles and tiles fully inside one region need no filtered texture lookup.
 
-The GPU README walks through [the paint tables and a radial-gradient lookup](crates/glyphux-gpu/README.md#color-fonts-and-shared-atlas-pages).
+The GPU README walks through [the paint tables and a radial-gradient lookup](crates/glyphux-wgpu/README.md#color-fonts-and-shared-atlas-pages).
 See [color glyph support and examples](docs/color-glyphs.md) for supported paints and limits.
 The images above use the CPU renderer and actual GPU atlas data.
 

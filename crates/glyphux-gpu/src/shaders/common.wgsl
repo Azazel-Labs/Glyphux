@@ -94,6 +94,11 @@ struct TileGroup {
     ub: vec4<f32>,
 }
 
+// Workgroups along x of every dispatch with more than that many (split_workgroups): work item
+// wid.x + wid.y * DISPATCH_X. A constant, not @builtin(num_workgroups), which some backends
+// can't provide (Godot's Direct3D 12 driver).
+const DISPATCH_X: u32 = 65535u;
+
 @group(0) @binding(0) var<storage, read> glyphs: array<Glyph>;
 // (glyph index, tile index) per workgroup
 @group(0) @binding(1) var<storage, read> work: array<vec2<u32>>;

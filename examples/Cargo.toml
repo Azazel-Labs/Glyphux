@@ -1,6 +1,6 @@
 [package]
 name = "glyphux-examples"
-description = "Runnable demos of glyphux and glyphux-gpu (cargo run --release --bin <name>)"
+description = "Runnable demos of glyphux and glyphux-wgpu (cargo run --release --bin <name>)"
 version.workspace = true
 edition.workspace = true
 rust-version = "1.93"
@@ -9,7 +9,7 @@ publish = false
 
 [dependencies]
 glyphux.workspace = true
-glyphux-gpu = { workspace = true, features = ["demo"] }
+glyphux-wgpu = { workspace = true, features = ["demo"] }
 
 [[bin]]
 name = "glyph"

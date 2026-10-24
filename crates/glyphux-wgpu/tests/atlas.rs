@@ -1,6 +1,6 @@
 //! Glyph atlas behavior that needs a device (skipped when no adapter is available).
 use glyphux::Shape;
-use glyphux_gpu::{AtlasConfig, GlyphAtlas, GlyphKey, default_device, wgpu};
+use glyphux_wgpu::{AtlasConfig, GlyphAtlas, GlyphKey, default_device, wgpu};
 
 #[test]
 fn pages_grow_preserve_pixels_and_respect_cap() {
@@ -31,7 +31,7 @@ fn pages_grow_preserve_pixels_and_respect_cap() {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
         reference.flush(&device, &mut encoder);
         queue.submit([encoder.finish()]);
-        let expected = glyphux_gpu::read_texture_layer(&device, &queue, reference.texture(), 0);
+        let expected = glyphux_wgpu::read_texture_layer(&device, &queue, reference.texture(), 0);
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
         for i in 0..cap {
             let placed = atlas.get(key(i), 64.0, square).unwrap();
@@ -49,7 +49,7 @@ fn pages_grow_preserve_pixels_and_respect_cap() {
         queue.submit([encoder.finish()]);
         for page in 0..cap {
             assert_eq!(
-                glyphux_gpu::read_texture_layer(&device, &queue, atlas.texture(), page),
+                glyphux_wgpu::read_texture_layer(&device, &queue, atlas.texture(), page),
                 expected
             );
         }
@@ -138,7 +138,7 @@ fn several_flushes_per_submit() {
             }
         }
         queue.submit([enc.finish()]);
-        glyphux_gpu::read_texture_layer(&device, &queue, atlas.texture(), 0)
+        glyphux_wgpu::read_texture_layer(&device, &queue, atlas.texture(), 0)
     };
     let separate = render(false);
     assert!(separate.iter().any(|&b| b != 0), "nothing was generated");
@@ -182,11 +182,15 @@ fn invalid_configs() {
             return;
         }
     };
+    // Formats come from an enum of the supported ones; only filtering 32-bit floats depends
+    // on the device.
+    let f32_config = AtlasConfig {
+        format: glyphux_wgpu::AtlasFormat::Rgba32Float,
+        ..AtlasConfig::default()
+    };
+    let filterable = device.features().contains(wgpu::Features::FLOAT32_FILTERABLE);
+    assert_eq!(GlyphAtlas::new(&device, f32_config).is_ok(), filterable);
     let bad = [
-        AtlasConfig {
-            format: wgpu::TextureFormat::Bgra8Unorm,
-            ..AtlasConfig::default()
-        },
         AtlasConfig {
             size: 1 << 20,
             ..AtlasConfig::default()
@@ -203,4 +207,60 @@ fn invalid_configs() {
     for config in bad {
         assert!(GlyphAtlas::new(&device, config).is_err());
     }
+}
+
+/// `take_written_rows` lists exactly the rows flushes generated into, and the rows read back
+/// from there match the whole layer's.
+#[test]
+fn written_rows_cover_generated_glyphs() {
+    let (_, device, queue) = match default_device() {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("skipping: {e}");
+            return;
+        }
+    };
+    let square = || Shape::from_description("{ 0,0; 0,1; 1,1; 1,0; # }").ok();
+    let mut atlas = GlyphAtlas::new(
+        &device,
+        AtlasConfig {
+            size: 128,
+            layers: 2,
+            min_level: 32,
+            max_level: 32,
+            detail_probe: false,
+            ..AtlasConfig::default()
+        },
+    )
+    .unwrap();
+    let key = |glyph| GlyphKey { font: 0, glyph };
+    let a = atlas.get(key(0), 64.0, square).unwrap();
+    let b = atlas.get(key(1), 64.0, square).unwrap();
+    // Nothing is written before the flush.
+    assert_eq!(atlas.take_written_rows(), vec![]);
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+    atlas.flush(&device, &mut encoder);
+    queue.submit([encoder.finish()]);
+    let written = atlas.take_written_rows();
+    assert_eq!(written.len(), 1);
+    let (layer, rows) = written[0].clone();
+    assert_eq!(layer, a.layer);
+    let size = 128.0;
+    for g in [a, b] {
+        assert!(rows.start as f32 <= g.uv_min[1] * size && g.uv_max[1] * size <= rows.end as f32);
+    }
+    let whole = glyphux_wgpu::read_texture_layer(&device, &queue, atlas.texture(), layer);
+    let part = glyphux_wgpu::read_texture_rows(&device, &queue, atlas.texture(), layer, rows.clone());
+    let row_bytes = 128 * 4;
+    assert_eq!(
+        part,
+        whole[rows.start as usize * row_bytes..rows.end as usize * row_bytes]
+    );
+    // Cached glyphs write nothing more.
+    atlas.begin_frame();
+    atlas.get(key(0), 64.0, square).unwrap();
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+    atlas.flush(&device, &mut encoder);
+    queue.submit([encoder.finish()]);
+    assert_eq!(atlas.take_written_rows(), vec![]);
 }

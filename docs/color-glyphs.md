@@ -29,7 +29,7 @@ mixed-font run selection remain the application's responsibility.
 
 ## GPU drawing
 
-`glyphux_gpu::color::ColorRenderer` uploads compiled fields and draws
+`glyphux_wgpu::color::ColorRenderer` uploads compiled fields and draws
 `ColorGlyphInstance`s. Call `upload` once, `prepare` with the viewport and instances,
 then `render` inside the render pass. `ColorGlyphInstance::new` places the field using
 its baseline-relative plane bounds and pixels per em. Add the shaped glyph's x/y
