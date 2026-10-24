@@ -5,14 +5,11 @@ Run it from anywhere in a Glyphux checkout; it needs Rust's cargo (https://rustu
 
     python examples/godot/addons/glyphux/build.py          # optimized, for the editor and exports
     python examples/godot/addons/glyphux/build.py --dev    # unoptimized, faster to compile (editor only)
-    python examples/godot/addons/glyphux/build.py --project ../my_game
-                                                           # also install the addon into a project
 
 This folder is the addon, inside the demo project that uses it; rust/ holds the library's
 crate (a member of the Glyphux workspace). The build also writes the generated shaders
-(shaders/generated). Installing into a project copies what Godot needs, without rust/ and
-this script. By default the editor and debug exports load the optimized library too: glyph
-preparation is CPU work that an unoptimized build makes noticeably slow.
+(shaders/generated). By default the editor and debug exports load the optimized library
+too: glyph preparation is CPU work that an unoptimized build makes noticeably slow.
 """
 
 import argparse
@@ -25,8 +22,6 @@ from pathlib import Path
 
 ADDON = Path(__file__).resolve().parent
 CRATE = ADDON / "rust"
-# What a project's addons/glyphux needs at run time.
-RUNTIME = ["glyphux.gdextension", "bin", "icons", "shaders", "README.md", "LICENSE"]
 
 
 def godot_platform():
@@ -72,27 +67,9 @@ def copy(source, target):
     print(f"  {target}")
 
 
-def install(project):
-    """Copies the addon's run time files into project/addons/glyphux."""
-    project = project.resolve()
-    if not (project / "project.godot").is_file():
-        sys.exit(f"build.py: {project} is not a Godot project (no project.godot)")
-    target = project / "addons" / "glyphux"
-    if target == ADDON:
-        return
-    print(f"installing into {target}")
-    for name in RUNTIME:
-        source = ADDON / name
-        files = sorted(source.rglob("*")) if source.is_dir() else [source]
-        for f in files:
-            if f.is_file():
-                copy(f, target / f.relative_to(ADDON))
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--dev", action="store_true", help="unoptimized build, for the editor and debug exports only")
-    parser.add_argument("--project", type=Path, help="also install the addon into this Godot project")
     parser.add_argument("--check", action="store_true", help="check formatting and lints instead of building (CI)")
     args = parser.parse_args()
 
@@ -110,8 +87,6 @@ def main():
     print("copying the library")
     for slot in slots:
         copy(built, ADDON / "bin" / file_name(slot))
-    if args.project:
-        install(args.project)
 
 
 if __name__ == "__main__":
