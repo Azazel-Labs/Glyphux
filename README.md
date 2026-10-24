@@ -459,6 +459,11 @@ glyphux::io::save_png(&msdf, "a.png")?;
   `sign_correction: Option<FillRule>` (scanline pass), `threads` (0 = automatic).
 * Shapes: build from `Edge::line` / `Edge::quadratic` / `Edge::cubic`, parse with
   `Shape::from_description`, load SVG with `io::svg::load_svg`, glyphs with `io::font::Font`.
+* `Shape::resolve_overlaps(fill_rule)` replaces overlapping contours with the outline of
+  their union (as msdfgen resolves shape geometry with Skia). Variable fonts keep strokes as
+  separate, overlapping contours; the overlapping contour combiner handles them except next
+  to the points where contours cross, where it leaves specks inside the fill. Call it after
+  `normalize` and before coloring.
 * Coordinates are y-up; set `shape.inverse_y_axis` for y-down data (SVG loading does this).
   `Bitmap` rows are stored top-to-bottom (image order); `save_fl32` writes msdfgen's bottom-up layout.
 * `Transform::autoframe(bounds, w, h, px_range)` mirrors msdfgen's `-autoframe`.

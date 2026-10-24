@@ -399,7 +399,7 @@ impl Shape {
         self.winding_number_with(p, &mut v)
     }
 
-    fn winding_number_with(&self, p: Vec2, crossings: &mut Vec<(f64, i32)>) -> i32 {
+    pub(crate) fn winding_number_with(&self, p: Vec2, crossings: &mut Vec<(f64, i32)>) -> i32 {
         crossings.clear();
         for c in &self.contours {
             for e in &c.edges {

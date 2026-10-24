@@ -39,6 +39,7 @@ pub mod gpu;
 pub mod io;
 pub mod math;
 pub mod render;
+mod resolve;
 pub mod shape;
 pub(crate) mod solver;
 pub mod transform;
