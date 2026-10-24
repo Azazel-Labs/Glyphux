@@ -1,6 +1,10 @@
 // MSDF / MTSDF text rendering with wgpu: one instanced quad per glyph. Each pixel samples
 // the atlas and leaves the rest to text_core.wgsl, which comes first in the module.
 
+// The part of the glyphs a pipeline draws (text_pass): TextRenderer draws the instances
+// three times, once per pass.
+override text_pass_index: u32 = TEXT_PASS_ALL;
+
 struct Globals {
     // Target size in pixels.
     viewport: vec2<f32>,
@@ -51,6 +55,18 @@ struct VsOut {
     @location(8) @interpolate(flat) layer: u32,
 }
 
+fn instance_glyph(inst: Instance) -> TextGlyph {
+    var g: TextGlyph;
+    g.color = inst.color;
+    g.outline = inst.outline;
+    g.params = inst.params;
+    g.glow = inst.glow;
+    g.shadow = inst.shadow;
+    g.shadow_params = inst.shadow_params;
+    g.uv_rect = inst.uv;
+    return g;
+}
+
 @vertex
 fn vs(@builtin(vertex_index) vi: u32, inst: Instance) -> VsOut {
     let corner = vec2<f32>(f32(vi & 1u), f32(vi >> 1u));
@@ -71,6 +87,10 @@ fn vs(@builtin(vertex_index) vi: u32, inst: Instance) -> VsOut {
     out.shadow_params = inst.shadow_params;
     out.uv_rect = inst.uv;
     out.layer = inst.layer;
+    // Nothing to draw in this pass: a quad of no area.
+    if (!text_pass_draws(instance_glyph(inst), text_pass_index)) {
+        out.pos = vec4<f32>(0.0, 0.0, 0.0, 1.0);
+    }
     return out;
 }
 
@@ -84,6 +104,7 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
     g.shadow = in.shadow;
     g.shadow_params = in.shadow_params;
     g.uv_rect = in.uv_rect;
+    g = text_pass(g, text_pass_index);
     var p: TextPixel;
     p.uv = in.uv;
     p.duv_dx = dpdx(in.uv);

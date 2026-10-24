@@ -15,8 +15,13 @@ struct Globals {
 }
 
 /// Renders [`GlyphInstance`]s sampled from a glyph atlas.
+///
+/// It draws them in three passes (the shader's `text_pass`): every glyph's drop shadow and
+/// glow, then every outline, then every fill, so that no glyph's effects cover its
+/// neighbors. Quads with nothing to draw in a pass have no area there.
 pub struct TextRenderer {
-    pipeline: wgpu::RenderPipeline,
+    /// One per pass: effects, outlines, fills.
+    pipelines: [wgpu::RenderPipeline; 3],
     layout: wgpu::BindGroupLayout,
     globals: wgpu::Buffer,
     sampler: wgpu::Sampler,
@@ -74,37 +79,44 @@ impl TextRenderer {
             0 => Float32x4, 1 => Float32x4, 2 => Float32x4, 3 => Float32x4, 4 => Float32x4,
             5 => Float32x4, 6 => Float32x4, 7 => Float32x4, 8 => Float32x4, 9 => Uint32
         ];
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("glyphux text"),
-            layout: Some(&pl),
-            vertex: wgpu::VertexState {
-                module: &module,
-                entry_point: Some("vs"),
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-                buffers: &[Some(wgpu::VertexBufferLayout {
-                    array_stride: size_of::<GlyphInstance>() as u64,
-                    step_mode: wgpu::VertexStepMode::Instance,
-                    attributes: &attrs,
-                })],
-            },
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleStrip,
+        let pipelines = [0.0, 1.0, 2.0].map(|pass| {
+            let constants = [("text_pass_index", pass)];
+            let options = || wgpu::PipelineCompilationOptions {
+                constants: &constants,
                 ..Default::default()
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            fragment: Some(wgpu::FragmentState {
-                module: &module,
-                entry_point: Some("fs"),
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: target,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            multiview_mask: None,
-            cache: None,
+            };
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("glyphux text"),
+                layout: Some(&pl),
+                vertex: wgpu::VertexState {
+                    module: &module,
+                    entry_point: Some("vs"),
+                    compilation_options: options(),
+                    buffers: &[Some(wgpu::VertexBufferLayout {
+                        array_stride: size_of::<GlyphInstance>() as u64,
+                        step_mode: wgpu::VertexStepMode::Instance,
+                        attributes: &attrs,
+                    })],
+                },
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleStrip,
+                    ..Default::default()
+                },
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState::default(),
+                fragment: Some(wgpu::FragmentState {
+                    module: &module,
+                    entry_point: Some("fs"),
+                    compilation_options: options(),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: target,
+                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                }),
+                multiview_mask: None,
+                cache: None,
+            })
         });
         let globals = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("glyphux text globals"),
@@ -119,7 +131,7 @@ impl TextRenderer {
             ..Default::default()
         });
         TextRenderer {
-            pipeline,
+            pipelines,
             layout,
             globals,
             sampler,
@@ -196,7 +208,7 @@ impl TextRenderer {
         self.render_range(pass, 0..self.count);
     }
 
-    /// Draws an ordered range of prepared instances.
+    /// Draws an ordered range of prepared instances (in three passes, see [`TextRenderer`]).
     pub fn render_range(&self, pass: &mut wgpu::RenderPass<'_>, range: std::ops::Range<u32>) {
         assert!(range.end <= self.count);
         let (Some((_, bg)), Some(inst)) = (&self.bind_group, &self.instances) else {
@@ -205,9 +217,11 @@ impl TextRenderer {
         if self.count == 0 {
             return;
         }
-        pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, bg, &[]);
         pass.set_vertex_buffer(0, inst.slice(..));
-        pass.draw(0..4, range);
+        for pipeline in &self.pipelines {
+            pass.set_pipeline(pipeline);
+            pass.draw(0..4, range.clone());
+        }
     }
 }

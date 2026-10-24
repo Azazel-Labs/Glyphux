@@ -61,6 +61,46 @@ struct TextSamples {
     shadow: vec4<f32>,
 }
 
+// Glyphs drawn in passes keep one glyph's effects off its neighbors: every glyph's drop
+// shadow and glow first, then every outline, then every fill. text_pass keeps the part of a
+// glyph that pass `part` draws (TEXT_PASS_ALL: all of it, in a single pass), and
+// text_pass_draws says whether that part is empty.
+const TEXT_PASS_EFFECTS: u32 = 0u;
+const TEXT_PASS_OUTLINE: u32 = 1u;
+const TEXT_PASS_FILL: u32 = 2u;
+const TEXT_PASS_ALL: u32 = 3u;
+
+fn text_pass(g: TextGlyph, part: u32) -> TextGlyph {
+    var out = g;
+    if (part == TEXT_PASS_EFFECTS) {
+        out.color.a = 0.0;
+        out.outline.a = 0.0;
+    }
+    if (part == TEXT_PASS_OUTLINE || part == TEXT_PASS_FILL) {
+        out.glow.a = 0.0;
+        out.shadow.a = 0.0;
+    }
+    if (part == TEXT_PASS_OUTLINE) {
+        out.color.a = 0.0;
+    }
+    if (part == TEXT_PASS_FILL) {
+        out.outline.a = 0.0;
+    }
+    return out;
+}
+
+fn text_pass_draws(g: TextGlyph, part: u32) -> bool {
+    // The atlas page view (the raw field) is drawn with the fill.
+    let raw = g.shadow_params.w > 0.5;
+    if (part == TEXT_PASS_EFFECTS) {
+        return !raw && ((g.glow.a > 0.0 && g.params.z > 0.0) || g.shadow.a > 0.0);
+    }
+    if (part == TEXT_PASS_OUTLINE) {
+        return !raw && g.outline.a > 0.0 && g.params.y > 0.0;
+    }
+    return true;
+}
+
 fn median3(a: f32, b: f32, c: f32) -> f32 {
     return max(min(a, b), min(max(a, b), c));
 }
