@@ -1,6 +1,6 @@
 # Glyphux in Godot: demo
 
-A Godot 4.6 project showing the [Glyphux addon](../../crates/glyphux-godot/addons/glyphux) in three
+A Godot 4.6 project showing the [Glyphux addon](addons/glyphux) in three
 scenes (keys 1, 2 and 3):
 
 * `main.tscn`: `GlyphuxLabel` nodes with text in several scripts, a size ladder, text
@@ -20,15 +20,16 @@ scenes (keys 1, 2 and 3):
 
 ## Run
 
-From the repository root, build the addon and install it into the project, then open it:
+From the repository root, build the addon's library, then open the project:
 
 ```
-python crates/glyphux-godot/build.py --project examples/godot
+python examples/godot/addons/glyphux/build.py
 godot --path examples/godot
 ```
 
-The addon is installed to `addons/glyphux/`, which git ignores. Run the build command again
-after changing the addon.
+The addon lives in this project, in `addons/glyphux/` (its library's crate is in
+`addons/glyphux/rust/`); the build puts the library in its `bin/`, which git ignores. Run
+the build command again after changing the addon.
 
 In the first scene, the A key shows the atlas page that holds the generated fields; Page
 Up and Page Down switch pages. `godot --path examples/godot -- --scene=world

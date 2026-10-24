@@ -16,22 +16,23 @@ and Compatibility.
 
 ## Install
 
-1. Copy this folder into your project as `addons/glyphux` (the `.gdextension` file expects
-   that path).
-2. Put the libraries for your platforms in `bin/`. To build them you need a clone of the
-   [Glyphux repository](https://github.com/Azazel-Labs/Glyphux),
-   [Rust](https://rustup.rs) and Python 3. From the clone:
+1. Build the libraries for your platforms into `bin/`. This needs a clone of the
+   [Glyphux repository](https://github.com/Azazel-Labs/Glyphux) (the addon is its demo
+   project's `addons/glyphux`), [Rust](https://rustup.rs) and Python 3:
 
    ```
-   python crates/glyphux-godot/build.py --project PATH_TO_YOUR_PROJECT
+   python examples/godot/addons/glyphux/build.py --project PATH_TO_YOUR_PROJECT
    ```
 
-   This builds the library for the platform it runs on and installs the addon, `bin/`
-   included, into the project. Run it again after updating Glyphux. `--dev` compiles faster
-   but makes an unoptimized library, which only the editor and debug exports load.
-3. Restart the editor if it was open. The nodes appear in the Create Node dialog.
+   This builds the library for the platform it runs on and installs the addon into your
+   project as `addons/glyphux` (the `.gdextension` file expects that path): everything but
+   `rust/` and `build.py`, which only build it. Run it again after updating Glyphux. `--dev`
+   compiles faster but makes an unoptimized library, which only the editor and debug
+   exports load.
+2. Restart the editor if it was open. The nodes appear in the Create Node dialog.
 
-The addon holds no sources: commit it with its `bin/` so that your team needs no Rust.
+The installed addon holds no sources: commit it with its `bin/` so that your team needs no
+Rust.
 
 ## GlyphuxLabel
 
@@ -149,7 +150,6 @@ filter.
 
 ## More
 
-The library's sources, how it works and how to build it are in the Glyphux repository, in
-[`crates/glyphux-godot`](https://github.com/Azazel-Labs/Glyphux/tree/main/crates/glyphux-godot).
-The demo project is
+The library's sources, how it works and how to build it: [`rust/`](rust/README.md). The
+demo project around this folder is
 [`examples/godot`](https://github.com/Azazel-Labs/Glyphux/tree/main/examples/godot).

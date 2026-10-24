@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
-"""Builds the Glyphux GDExtension library into the addon's bin/ folder.
+"""Builds the Glyphux GDExtension library into this addon's bin/ folder.
 
 Run it from anywhere in a Glyphux checkout; it needs Rust's cargo (https://rustup.rs):
 
-    python crates/glyphux-godot/build.py              # optimized library for the editor and exports
-    python crates/glyphux-godot/build.py --dev        # unoptimized, faster to compile (editor only)
-    python crates/glyphux-godot/build.py --project ../my_game
-                                                      # also install the addon into a project
+    python examples/godot/addons/glyphux/build.py          # optimized, for the editor and exports
+    python examples/godot/addons/glyphux/build.py --dev    # unoptimized, faster to compile (editor only)
+    python examples/godot/addons/glyphux/build.py --project ../my_game
+                                                           # also install the addon into a project
 
-The addon is addons/glyphux next to this script: what a Godot project needs, without the
-Rust sources. The build also writes its generated shaders (shaders/generated). By default
-the editor and debug exports load the optimized library too: glyph preparation is CPU work
-that an unoptimized build makes noticeably slow.
+This folder is the addon, inside the demo project that uses it; rust/ holds the library's
+crate (a member of the Glyphux workspace). The build also writes the generated shaders
+(shaders/generated). Installing into a project copies what Godot needs, without rust/ and
+this script. By default the editor and debug exports load the optimized library too: glyph
+preparation is CPU work that an unoptimized build makes noticeably slow.
 """
 
 import argparse
@@ -22,8 +23,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-CRATE = Path(__file__).resolve().parent
-ADDON = CRATE / "addons" / "glyphux"
+ADDON = Path(__file__).resolve().parent
+CRATE = ADDON / "rust"
+# What a project's addons/glyphux needs at run time.
+RUNTIME = ["glyphux.gdextension", "bin", "icons", "shaders", "README.md", "LICENSE"]
 
 
 def godot_platform():
@@ -70,15 +73,20 @@ def copy(source, target):
 
 
 def install(project):
-    """Copies the addon into project/addons/glyphux."""
+    """Copies the addon's run time files into project/addons/glyphux."""
     project = project.resolve()
     if not (project / "project.godot").is_file():
         sys.exit(f"build.py: {project} is not a Godot project (no project.godot)")
     target = project / "addons" / "glyphux"
+    if target == ADDON:
+        return
     print(f"installing into {target}")
-    for f in sorted(ADDON.rglob("*")):
-        if f.is_file():
-            copy(f, target / f.relative_to(ADDON))
+    for name in RUNTIME:
+        source = ADDON / name
+        files = sorted(source.rglob("*")) if source.is_dir() else [source]
+        for f in files:
+            if f.is_file():
+                copy(f, target / f.relative_to(ADDON))
 
 
 def main():

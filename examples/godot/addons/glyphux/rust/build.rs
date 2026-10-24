@@ -1,8 +1,8 @@
 //! Translates glyphux's WGSL with naga, every build, so the shaders always match the glyphux
 //! crates the library links and naga only runs here:
 //!
-//! * the shading library the addon's Godot shaders include, into
-//!   `addons/glyphux/shaders/generated/` (shipped with the addon, and committed);
+//! * the shading library the addon's Godot shaders include, into `../shaders/generated/`
+//!   (shipped with the addon, and committed);
 //! * the compute kernels in SPIR-V, into `OUT_DIR/kernels/`, which the library embeds.
 
 use std::fmt::Write as _;
@@ -20,9 +20,9 @@ const FORMATS: [AtlasFormat; 3] = [
 
 const README: &str = "# Generated: do not edit
 
-The Glyphux addon's build (`crates/glyphux-godot/build.rs` in the Glyphux repository)
-writes these files every time it builds the library, from the WGSL of the glyphux crates it
-links (translated with naga). Edit the WGSL in Glyphux instead, and build again.
+The addon's build (`rust/build.rs`) writes these files every time it builds the library,
+from the WGSL of the glyphux crates it links (translated with naga). Edit the WGSL in
+Glyphux instead, and build again.
 
 | File | |
 |---|---|
@@ -35,11 +35,11 @@ links (translated with naga). Edit the WGSL in Glyphux instead, and build again.
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     // Again if a generated file is changed or deleted (changes of the WGSL rebuild this script).
-    println!("cargo:rerun-if-changed=addons/glyphux/shaders/generated");
+    println!("cargo:rerun-if-changed=../shaders/generated");
     pdb_path();
 
     let manifest = PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
-    let shaders = manifest.join("addons/glyphux/shaders/generated");
+    let shaders = manifest.join("../shaders/generated");
     let mut files: Vec<(PathBuf, Vec<u8>)> = vec![(shaders.join("README.md"), README.into())];
     let text = glsl::text_library();
     files.push((

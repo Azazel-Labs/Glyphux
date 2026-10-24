@@ -56,7 +56,7 @@ jobs:
               if "path" in dependency and dependency.get("version") != version:
                   raise SystemExit(f"{name}: dependency version must be {version}")
           demo = tomllib.loads(pathlib.Path("examples/web-demo/Cargo.toml").read_text())["package"]
-          godot = tomllib.loads(pathlib.Path("crates/glyphux-godot/Cargo.toml").read_text())["package"]
+          godot = tomllib.loads(pathlib.Path("examples/godot/addons/glyphux/rust/Cargo.toml").read_text())["package"]
           examples = tomllib.loads(pathlib.Path("examples/Cargo.toml").read_text())["package"]
           if demo["version"] != version:
               raise SystemExit("The web demo's version must match the workspace")
@@ -98,12 +98,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       # The check job lints and tests the crate with the workspace; this builds the addon.
       # godot-rust ships prebuilt bindings for the 4.6 API: no Godot binary needed.
-      - run: python3 crates/glyphux-godot/build.py --project examples/godot
+      - run: python3 examples/godot/addons/glyphux/build.py
       # The build writes the addon's generated shaders: what is committed must be current.
       - name: Generated shaders are up to date
         run: |
-          git status --porcelain crates/glyphux-godot/addons/glyphux/shaders/generated
-          test -z "$(git status --porcelain crates/glyphux-godot/addons/glyphux/shaders/generated)"
+          git status --porcelain examples/godot/addons/glyphux/shaders/generated
+          test -z "$(git status --porcelain examples/godot/addons/glyphux/shaders/generated)"
 
   web-demo:
     name: Web demo (wasm)

@@ -2,24 +2,26 @@
 
 The GDExtension library (godot-rust) of the Glyphux Godot addon: `GlyphuxLabel`,
 `GlyphuxRichLabel` and `GlyphuxLabel3D`. What they do and how to use them is in the addon's
-[README](addons/glyphux/README.md).
+[README](../README.md).
 
 | Path | |
 |---|---|
-| `addons/glyphux/` | The addon, as Godot projects use it: `glyphux.gdextension`, the libraries (`bin/`, built), the shaders, icons and the user documentation. No sources. |
+| `..` (`addons/glyphux/`) | The addon, as Godot projects use it: `glyphux.gdextension`, the libraries (`bin/`, built), the shaders, icons and the user documentation. `rust/` and `build.py` are left out when it is installed into a project. |
 | `src/` | The library. |
-| `build.rs` | Translates Glyphux's WGSL with naga: the shading library into `addons/glyphux/shaders/generated/`, the compute kernels (SPIR-V) into the build's output, which the library embeds. |
-| `build.py` | Builds the library into `addons/glyphux/bin/`; `--project PATH` also installs the addon into a project. |
+| `build.rs` | Translates Glyphux's WGSL with naga: the shading library into `../shaders/generated/`, the compute kernels (SPIR-V) into the build's output, which the library embeds. |
+| `../build.py` | Builds the library into `../bin/`; `--project PATH` also installs the addon into a project. |
+| `.gdignore` | Keeps Godot from importing this folder. |
 
 ## Building
 
-The crate is a member of the Glyphux workspace and builds against its crates. With
-[Rust](https://rustup.rs) and Python 3:
+The crate is a member of the Glyphux workspace and builds against its crates. The demo
+project uses the addon where it is, so building is all it needs. With
+[Rust](https://rustup.rs) and Python 3, from the repository:
 
 ```
-python crates/glyphux-godot/build.py                          # bin/ for this platform
-python crates/glyphux-godot/build.py --project examples/godot  # and install into the demo
-python crates/glyphux-godot/build.py --check                  # formatting and lints (CI)
+python examples/godot/addons/glyphux/build.py                       # bin/ for this platform
+python examples/godot/addons/glyphux/build.py --project ../my_game  # and install it there
+python examples/godot/addons/glyphux/build.py --check               # formatting and lints
 ```
 
 It builds with the workspace's `godot` profile: release, except that panics unwind, so

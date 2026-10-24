@@ -11,7 +11,7 @@ A backend owns the device objects and runs what this crate prepares:
 | Crate | Graphics API |
 |---|---|
 | [`glyphux-wgpu`](../glyphux-wgpu) | wgpu: native (Vulkan, Metal, DX12, GL) and WebGPU. Adds the atlas texture, text and color glyph renderers, and a GPU profiler. Start here for a Rust application. |
-| [`glyphux-godot`](../glyphux-godot) | A Godot 4 addon with `GlyphuxLabel` nodes. |
+| [`glyphux-godot`](../../examples/godot/addons/glyphux) | A Godot 4.6 addon: `GlyphuxLabel`, `GlyphuxRichLabel` and `GlyphuxLabel3D` nodes. |
 
 The [workspace README](../../README.md#how-it-works) explains the method; glyphux-wgpu's
 README covers the [atlas, layout and rendering](../glyphux-wgpu/README.md#usage) and the

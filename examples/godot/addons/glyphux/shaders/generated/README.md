@@ -1,8 +1,8 @@
 # Generated: do not edit
 
-The Glyphux addon's build (`crates/glyphux-godot/build.rs` in the Glyphux repository)
-writes these files every time it builds the library, from the WGSL of the glyphux crates it
-links (translated with naga). Edit the WGSL in Glyphux instead, and build again.
+The addon's build (`rust/build.rs`) writes these files every time it builds the library,
+from the WGSL of the glyphux crates it links (translated with naga). Edit the WGSL in
+Glyphux instead, and build again.
 
 | File | |
 |---|---|

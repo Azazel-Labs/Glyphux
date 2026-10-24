@@ -1,4 +1,2 @@
 # Godot's import cache and editor state.
 .godot/
-# Installed from crates/glyphux-godot by its build.py (--project examples/godot).
-addons/glyphux/

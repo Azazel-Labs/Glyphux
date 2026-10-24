@@ -9,7 +9,7 @@ This is the wgpu backend of [`glyphux-gpu`](../glyphux-gpu), which holds everyth
 independent of the graphics API (the atlas' cache and allocation, the CPU preparation, the
 kernels' batches and WGSL, shaping and layout) and is re-exported here. This crate adds the
 atlas texture, the compute passes, the renderers and the profiler. The
-[Godot addon](../glyphux-godot) is another frontend on the same core.
+[Godot addon](../../examples/godot/addons/glyphux) is another frontend on the same core.
 
 The fields are the ones [`glyphux`](../glyphux) makes on the CPU, not an approximation of them:
 the same edge selection, the same overlapping contour combiner and the same error
@@ -229,9 +229,9 @@ queue.submit([encoder.finish()]);
 * **Your own cache.** `AtlasTexture` is the texture and its passes alone: `GlyphAtlas` is
   glyphux-gpu's cache plus one. Keep the cache yourself and flush it with
   `texture.flush(&mut cache, &device, &mut encoder)` to choose between backends at run time,
-  as the [Godot addon](../glyphux-godot) does.
+  as the [Godot addon](../../examples/godot/addons/glyphux) does.
 * **Mirroring.** To draw from a copy of the atlas in another API (an engine's own textures,
-  as the [Godot addon](../glyphux-godot) does), `take_written_rows()` lists the texel
+  as the [Godot addon](../../examples/godot/addons/glyphux) does), `take_written_rows()` lists the texel
   rows that flushes have written to each page since the last call. Read them back with
   `read_texture_rows` once the flush is submitted. `default_device_on(backends)` opens a
   device on the chosen backends; inside a host that draws with OpenGL on the same thread,
@@ -411,7 +411,7 @@ llvmpipe a batch of ~100 glyphs at 32 px takes about as long as one CPU core.
   shadows, variable-font weights and an optional live view of the atlas. Build steps are in
   its README.
 * [`examples/godot`](../../examples/godot) is a Godot 4.6 project using the
-  [Godot addon](../glyphux-godot): `GlyphuxLabel` nodes drawn with Godot's renderers from a
+  [Godot addon](../../examples/godot/addons/glyphux): `GlyphuxLabel` nodes drawn with Godot's renderers from a
   mirror of the atlas.
 
 ## Limitations
