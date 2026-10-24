@@ -287,7 +287,7 @@ dependencies = [
 
 [[package]]
 name = "glyphux"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "bytemuck",
  "ttf-parser",
@@ -295,14 +295,14 @@ dependencies = [
 
 [[package]]
 name = "glyphux-atlas"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "glyphux",
 ]
 
 [[package]]
 name = "glyphux-cli"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "clap",
  "glyphux",
@@ -312,7 +312,7 @@ dependencies = [
 
 [[package]]
 name = "glyphux-examples"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "glyphux",
  "glyphux-wgpu",
@@ -320,7 +320,7 @@ dependencies = [
 
 [[package]]
 name = "glyphux-godot"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "glyphux-gpu",
  "glyphux-wgpu",
@@ -329,7 +329,7 @@ dependencies = [
 
 [[package]]
 name = "glyphux-gpu"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "bytemuck",
  "glyphux",
@@ -341,7 +341,7 @@ dependencies = [
 
 [[package]]
 name = "glyphux-wgpu"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "bytemuck",
  "glyphux",
