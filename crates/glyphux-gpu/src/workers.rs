@@ -65,6 +65,11 @@ pub(crate) fn prepare_shape(mut shape: Shape, cfg: &AtlasConfig) -> Option<Shape
     if shape.contours.is_empty() {
         return None;
     }
+    if let Some(rule) = cfg.resolve_overlaps
+        && shape.resolve_overlaps(rule)
+    {
+        shape.normalize();
+    }
     // TrueType and PostScript outlines wind in opposite directions.
     shape.orient_contours(glyphux::FillRule::NonZero);
     if cfg.kind.channels == 3 {

@@ -238,9 +238,13 @@ struct Cli {
     /// Fill rule for the scanline pass
     #[arg(long, value_enum, default_value_t = Fill::Nonzero, help_heading = "Generation")]
     fillrule: Fill,
-    /// Keep contour directions as given
+    /// Keep contour directions as given (with --nopreprocess)
     #[arg(long, help_heading = "Generation")]
     noorient: bool,
+    /// Keep overlapping contours as they are (default: replace them with the outline of
+    /// their union, as variable fonts need)
+    #[arg(long, help_heading = "Generation")]
+    nopreprocess: bool,
     /// Don't export kerning
     #[arg(long, help_heading = "Generation")]
     nokerning: bool,
@@ -301,6 +305,7 @@ fn main() {
         angle_threshold: cli.angle,
         seed: cli.seed,
         orient: !cli.noorient,
+        resolve_overlaps: !cli.nopreprocess,
         kerning: !cli.nokerning,
     };
     let font_path = cli.font.as_ref().unwrap_or_else(|| die("--font is required"));

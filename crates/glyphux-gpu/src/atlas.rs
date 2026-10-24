@@ -77,6 +77,12 @@ pub struct AtlasConfig {
     /// by default): fixes the sign of texels inside overlapping or self-intersecting contours
     /// (variable fonts), which the overlapping contour combiner can get wrong. `None`: off.
     pub sign_correction: Option<glyphux::FillRule>,
+    /// Removes overlaps before generating, filling with this rule (non-zero by default):
+    /// overlapping contours (variable fonts keep strokes separate) become the outline of
+    /// their union ([`glyphux::Shape::resolve_overlaps`]). The overlapping contour combiner
+    /// alone leaves specks inside the fill next to the points where contours cross. `None`:
+    /// off.
+    pub resolve_overlaps: Option<glyphux::FillRule>,
 }
 
 impl Default for AtlasConfig {
@@ -102,6 +108,7 @@ impl Default for AtlasConfig {
             texel_budget: 0,
             max_range_tier: 3,
             sign_correction: Some(glyphux::FillRule::NonZero),
+            resolve_overlaps: Some(glyphux::FillRule::NonZero),
         }
     }
 }

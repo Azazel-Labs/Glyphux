@@ -246,6 +246,11 @@ queue.submit([encoder.finish()]);
   shadow's lookups stay inside the glyph's atlas rectangle), and a rotation about a pivot for
   text on paths (`with_weight`, `with_outline`, `with_glow`, `with_shadow`, `with_rotation`).
   `GlyphInstance::atlas_page` draws a whole atlas layer's raw field, for debugging views.
+* **Overlap removal.** Before a glyph is generated, overlapping contours (variable fonts
+  keep a glyph's strokes separate) are replaced by the outline of their union
+  (`glyphux::Shape::resolve_overlaps`, `AtlasConfig::resolve_overlaps`). Without it, the
+  overlapping contour combiner leaves specks inside the fill next to the points where
+  contours cross (the middle of an `x`).
 * **Sign correction.** A positive distance means inside the shape; a negative one means
   outside. Combining overlapping or self-crossing outlines can sometimes give a pixel
   the wrong sign, particularly in variable fonts.

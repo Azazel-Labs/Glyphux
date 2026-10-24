@@ -190,6 +190,10 @@ struct Cli {
     /// Disable overlapping contour support
     #[arg(long, help_heading = "Shape")]
     nooverlap: bool,
+    /// Keep overlapping contours as they are (default: replace them with the outline of
+    /// their union, as variable fonts need; not with --noorient or --reverseorder)
+    #[arg(long, help_heading = "Shape")]
+    nopreprocess: bool,
     /// Disable the scanline sign correction pass
     #[arg(long, help_heading = "Shape")]
     noscanline: bool,
@@ -336,12 +340,19 @@ fn run(cli: &Cli) {
             .iter()
             .any(|c| c.edges.iter().any(|e| e.color != EdgeColor::WHITE));
     shape.normalize();
+    // Overlapping contours (variable fonts) leave specks inside the fill next to the points
+    // where they cross: replace them with the outline of their union. That orients the
+    // contours and resets the edge colors, so not when either is to be kept.
+    let rule = if is_svg { FillRule::NonZero } else { fill_rule };
+    if !cli.nopreprocess && !cli.noorient && !cli.reverseorder && !skip_coloring && shape.resolve_overlaps(rule) {
+        shape.normalize();
+    }
     if cli.reverseorder {
         for c in &mut shape.contours {
             c.reverse();
         }
     } else if !cli.noorient {
-        shape.orient_contours(if is_svg { FillRule::NonZero } else { fill_rule });
+        shape.orient_contours(rule);
     }
     if cli.yflip {
         shape.inverse_y_axis = !shape.inverse_y_axis;

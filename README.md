@@ -469,7 +469,8 @@ glyphux::io::save_png(&msdf, "a.png")?;
   their union (as msdfgen resolves shape geometry with Skia). Variable fonts keep strokes as
   separate, overlapping contours; the overlapping contour combiner handles them except next
   to the points where contours cross, where it leaves specks inside the fill. Call it after
-  `normalize` and before coloring.
+  `normalize` and before coloring. glyphux-gpu's atlas does
+  (`AtlasConfig::resolve_overlaps`).
 * Coordinates are y-up; set `shape.inverse_y_axis` for y-down data (SVG loading does this).
   `Bitmap` rows are stored top-to-bottom (image order); `save_fl32` writes msdfgen's bottom-up layout.
 * `Transform::autoframe(bounds, w, h, px_range)` mirrors msdfgen's `-autoframe`.
@@ -534,7 +535,7 @@ Supported emoji sequences are shaped before rendering. No browser or GPU is requ
 | Output | `-o FILE`, `--size W H` (alias: `--dimensions`) |
 | Framing | `--autoframe`, `--scale`, `--translate` |
 | Distance range | `--pxrange`, `--range` |
-| Shape processing | `--angle`, `--coloringstrategy`, `--fillrule`, `--errorcorrection` |
+| Shape processing | `--angle`, `--coloringstrategy`, `--fillrule`, `--errorcorrection`, `--nopreprocess` |
 | Preview and export | `--testrender FILE W H`, `--exportshape FILE` |
 | Performance and diagnostics | `--threads N`, `--printmetrics`, `--stats` |
 
@@ -558,7 +559,9 @@ Distance-field and atlas options follow msdfgen / msdf-atlas-gen. Single-dash
 spellings such as `-pxrange 4` are accepted alongside `--pxrange 4`.
 
 Differences from msdfgen's defaults: ink-trap coloring, contour reorientation (`-noorient`
-to disable) and the "auto" error correction mode even with the scanline pass (msdfgen falls
+to disable), overlapping contours replaced by the outline of their union in both tools
+(msdfgen's geometry preprocessing, which needs Skia there; `-nopreprocess` to disable) and
+the "auto" error correction mode even with the scanline pass (msdfgen falls
 back to "auto-fast"); the scanline pass downgrades to "auto-fast" only if it actually had to
 flip signs.
 

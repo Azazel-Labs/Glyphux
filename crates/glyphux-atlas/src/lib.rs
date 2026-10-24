@@ -103,6 +103,11 @@ pub struct GlyphOptions {
     pub seed: u64,
     /// Reorient contours by the non-zero fill rule.
     pub orient: bool,
+    /// Replace overlapping contours with the outline of their union, by the non-zero fill
+    /// rule (`Shape::resolve_overlaps`, msdf-atlas-gen's geometry preprocessing). Variable
+    /// fonts keep a glyph's strokes as separate contours, and fields of overlapping contours
+    /// have specks inside the fill next to the points where they cross. Implies `orient`.
+    pub resolve_overlaps: bool,
     /// Compute kerning pairs (from the `kern` table).
     pub kerning: bool,
 }
@@ -115,6 +120,7 @@ impl Default for GlyphOptions {
             angle_threshold: DEFAULT_ANGLE_THRESHOLD,
             seed: 0,
             orient: true,
+            resolve_overlaps: true,
             kerning: true,
         }
     }
@@ -225,7 +231,10 @@ impl FontGeometry {
                 }
             }
             shape.normalize();
-            if opts.orient {
+            if opts.resolve_overlaps && shape.resolve_overlaps(FillRule::NonZero) {
+                shape.normalize();
+            }
+            if opts.orient || opts.resolve_overlaps {
                 shape.orient_contours(FillRule::NonZero);
             }
             edge_coloring(&mut shape, opts.coloring, opts.angle_threshold, opts.seed);
