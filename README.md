@@ -52,6 +52,10 @@ The generator supports true SDF, pseudo-SDF, **multi-channel SDF (MSDF)** and
       <td><a href="crates/glyphux-wgpu"><code>glyphux-wgpu</code></a></td>
       <td>The wgpu 30 backend (native and WebGPU): the atlas texture, the compute passes, and MSDF text and color glyph renderers. The only crate that depends on wgpu.</td>
     </tr>
+    <tr>
+      <td><a href="crates/glyphux-godot"><code>glyphux-godot</code></a></td>
+      <td>A Godot 4.6 addon: <code>GlyphuxLabel</code>, <code>GlyphuxRichLabel</code> (BBCode) and <code>GlyphuxLabel3D</code> nodes, generated on Godot's own <code>RenderingDevice</code>. Its <code>addons/glyphux</code> folder is what a project needs; <code>build.py</code> builds the library into it.</td>
+    </tr>
   </tbody>
 </table>
 
@@ -347,8 +351,10 @@ errors and writes the results into the atlas. Its output matches the CPU's to ab
 3·10⁻⁶, apart from ties where two edges are equally close. `GlyphAtlas` keeps fields
 at resolutions suited to the displayed text size; `TextRenderer` draws them.
 [glyphux-gpu](crates/glyphux-gpu/README.md) holds everything independent of the graphics
-API; backends run it, such as [glyphux-wgpu](crates/glyphux-wgpu/README.md) (used by the
-[web demo](examples/web-demo)).
+API; backends run it: [glyphux-wgpu](crates/glyphux-wgpu/README.md) (used by the
+[web demo](examples/web-demo)) and the [Godot addon](crates/glyphux-godot), which adds
+`GlyphuxLabel`, `GlyphuxRichLabel` and `GlyphuxLabel3D` nodes to Godot 4.6
+([demo project](examples/godot)).
 
 ```
 cargo run --release --bin text_demo -- examples/web-demo/assets/Inter-Regular.otf

@@ -1,0 +1,43 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://rich.gd" id="1_rich"]
+[ext_resource type="FontVariation" path="res://fonts/inter_emoji.tres" id="2_emoji"]
+[ext_resource type="FontFile" path="res://fonts/InterVariable-Latin.ttf" id="4_inter"]
+
+[node name="Rich" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+script = ExtResource("1_rich")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0.07, 0.08, 0.1, 1)
+
+[node name="Text" type="GlyphuxRichLabel" parent="."]
+layout_mode = 0
+offset_left = 80.0
+offset_top = 50.0
+offset_right = 1200.0
+offset_bottom = 640.0
+text = "[center][font_size=44][glow color=#ff8c26 radius=14][b]GlyphuxRichLabel[/b][/glow][/font_size][/center]
+BBCode with [b]bold[/b] and [i]italics[/i] (the variable font's weight axis and a slant), [u]underline[/u], [s]strikethrough[/s], [color=#ffb347]colors[/color], [font_size=34]sizes[/font_size], [outline_size=2][outline_color=#5a1030][color=#ffc0d8]outlines[/color][/outline_color][/outline_size], [glow color=#40c0ff radius=10]glows[/glow] and [shadow color=#e04070 offset=3,3 blur=2]shadows[/shadow].
+
+Animation runs in the shader: [wave amp=60 freq=6]waves[/wave], [shake rate=14 level=14]shaking[/shake] and [rainbow freq=1 sat=0.7 val=1 speed=0.4]rainbows of many colors[/rainbow] cost nothing on the CPU. Emoji come from the font's fallbacks: 🔥😀🤖. Lines wrap at the control's width, between words, and [url=https://github.com/Azazel-Labs/Glyphux]links[/url] report clicks with their meta.
+
+[right][font=res://fonts/NotoSansArabic-Subset.ttf][font_size=36]تكبير وانزلاق[/font_size][/font][/right]"
+font = ExtResource("2_emoji")
+font_size = 26.0
+color = Color(0.9, 0.92, 0.96, 1)
+line_spacing = 1.15
+
+[node name="Clicked" type="GlyphuxLabel" parent="."]
+position = Vector2(80, 690)
+text = "Click the link. Keys: 1 the 2D labels, 2 rich text, 3 text in 3D."
+font = ExtResource("4_inter")
+font_size = 16.0
+color = Color(0.55, 0.58, 0.65, 1)

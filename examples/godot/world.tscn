@@ -1,0 +1,95 @@
+[gd_scene load_steps=10 format=3]
+
+[ext_resource type="Script" path="res://world.gd" id="1_world"]
+[ext_resource type="FontVariation" path="res://fonts/inter_heavy.tres" id="2_heavy"]
+[ext_resource type="FontVariation" path="res://fonts/inter_emoji.tres" id="3_emoji"]
+[ext_resource type="FontFile" path="res://fonts/InterVariable-Latin.ttf" id="4_inter"]
+
+[sub_resource type="Environment" id="Environment_sky"]
+background_mode = 1
+background_color = Color(0.07, 0.08, 0.11, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.6, 0.62, 0.7, 1)
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_floor"]
+size = Vector2(16, 16)
+
+[sub_resource type="StandardMaterial3D" id="Material_floor"]
+albedo_color = Color(0.16, 0.18, 0.24, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_crate"]
+size = Vector3(1.2, 1.2, 1.2)
+
+[sub_resource type="StandardMaterial3D" id="Material_crate"]
+albedo_color = Color(0.55, 0.36, 0.2, 1)
+
+[node name="World" type="Node3D"]
+script = ExtResource("1_world")
+
+[node name="Environment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_sky")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.866, -0.354, 0.354, 0, 0.707, 0.707, -0.5, -0.612, 0.612, 0, 4, 0)
+
+[node name="Floor" type="MeshInstance3D" parent="."]
+mesh = SubResource("PlaneMesh_floor")
+surface_material_override/0 = SubResource("Material_floor")
+
+[node name="Crate" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.2, 0.6, 0.6)
+mesh = SubResource("BoxMesh_crate")
+surface_material_override/0 = SubResource("Material_crate")
+
+[node name="Title" type="GlyphuxLabel3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.4, -1)
+text = "Glyphux in 3D"
+font = ExtResource("2_heavy")
+font_size = 96.0
+pixel_size = 0.008
+glow_color = Color(1, 0.55, 0.15, 0.85)
+glow_radius = 16.0
+
+[node name="Floor Text" type="GlyphuxLabel3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, -4.37114e-08, 1, 0, -1, -4.37114e-08, -1.5, 0.01, 1.5)
+text = "Sharp at any distance: fields follow the camera."
+font = ExtResource("4_inter")
+font_size = 40.0
+pixel_size = 0.01
+color = Color(0.85, 0.9, 1, 1)
+width = 360.0
+autowrap = true
+shadow_color = Color(0, 0, 0, 0.6)
+shadow_offset = Vector2(4, 4)
+shadow_blur = 3.0
+
+[node name="Billboard" type="GlyphuxLabel3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.6, 1.3, 0.4)
+text = "[b]Billboard[/b] with [u][color=#ffb347]BBCode[/color][/u] 🔥😀🤖
+[wave amp=60 freq=5]and waves[/wave]"
+bbcode_enabled = true
+font = ExtResource("3_emoji")
+font_size = 40.0
+billboard = true
+outline_color = Color(0.1, 0.05, 0.15, 1)
+outline_width = 2.0
+
+[node name="Through" type="GlyphuxLabel3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.2, 0.6, -0.4)
+text = "Behind the crate, drawn through it"
+font = ExtResource("4_inter")
+font_size = 28.0
+color = Color(0.5, 1, 0.8, 1)
+no_depth_test = true
+billboard = true
+
+[node name="Camera" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.94, 0.342, 0, -0.342, 0.94, 0, 2.2, 6)
+fov = 60.0
+
+[node name="Help" type="GlyphuxLabel" parent="."]
+position = Vector2(24, 700)
+text = "Keys: 1 the 2D labels, 2 rich text, 3 text in 3D."
+font = ExtResource("4_inter")
+font_size = 16.0
+color = Color(0.55, 0.58, 0.65, 1)

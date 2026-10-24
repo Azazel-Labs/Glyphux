@@ -1,0 +1,110 @@
+#!/usr/bin/env python3
+"""Builds the Glyphux GDExtension library into the addon's bin/ folder.
+
+Run it from anywhere in a Glyphux checkout; it needs Rust's cargo (https://rustup.rs):
+
+    python crates/glyphux-godot/build.py              # optimized library for the editor and exports
+    python crates/glyphux-godot/build.py --dev        # unoptimized, faster to compile (editor only)
+    python crates/glyphux-godot/build.py --project ../my_game
+                                                      # also install the addon into a project
+
+The addon is addons/glyphux next to this script: what a Godot project needs, without the
+Rust sources. The build also writes its generated shaders (shaders/generated). By default
+the editor and debug exports load the optimized library too: glyph preparation is CPU work
+that an unoptimized build makes noticeably slow.
+"""
+
+import argparse
+import json
+import platform
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+CRATE = Path(__file__).resolve().parent
+ADDON = CRATE / "addons" / "glyphux"
+
+
+def godot_platform():
+    """Godot's name for this OS and CPU, and the library file names cargo and Godot use."""
+    system = platform.system()
+    machine = platform.machine().lower()
+    arch = {"amd64": "x86_64", "x86_64": "x86_64", "arm64": "arm64", "aarch64": "arm64"}.get(machine)
+    if arch is None:
+        sys.exit(f"build.py: unsupported CPU '{machine}'")
+    if system == "Windows":
+        return "glyphux_godot.dll", lambda slot: f"glyphux.windows.{slot}.{arch}.dll"
+    if system == "Linux":
+        return "libglyphux_godot.so", lambda slot: f"libglyphux.linux.{slot}.{arch}.so"
+    if system == "Darwin":
+        return "libglyphux_godot.dylib", lambda slot: f"libglyphux.macos.{slot}.dylib"
+    sys.exit(f"build.py: unsupported OS '{system}'")
+
+
+def cargo(args, capture=False):
+    command = ["cargo", *args]
+    if not capture:
+        print("+", " ".join(command), flush=True)
+    try:
+        result = subprocess.run(command, cwd=CRATE, check=True, capture_output=capture, text=capture)
+    except FileNotFoundError:
+        sys.exit("build.py: cargo not found; install Rust from https://rustup.rs")
+    except subprocess.CalledProcessError as e:
+        sys.exit(e.returncode)
+    return result.stdout
+
+
+def target_directory():
+    metadata = json.loads(cargo(["metadata", "--format-version", "1", "--no-deps"], capture=True))
+    return Path(metadata["target_directory"])
+
+
+def copy(source, target):
+    target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        shutil.copy2(source, target)
+    except PermissionError:
+        sys.exit(f"build.py: {target} is in use; close the running game (or the editor) and build again")
+    print(f"  {target}")
+
+
+def install(project):
+    """Copies the addon into project/addons/glyphux."""
+    project = project.resolve()
+    if not (project / "project.godot").is_file():
+        sys.exit(f"build.py: {project} is not a Godot project (no project.godot)")
+    target = project / "addons" / "glyphux"
+    print(f"installing into {target}")
+    for f in sorted(ADDON.rglob("*")):
+        if f.is_file():
+            copy(f, target / f.relative_to(ADDON))
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument("--dev", action="store_true", help="unoptimized build, for the editor and debug exports only")
+    parser.add_argument("--project", type=Path, help="also install the addon into this Godot project")
+    parser.add_argument("--check", action="store_true", help="check formatting and lints instead of building (CI)")
+    args = parser.parse_args()
+
+    if args.check:
+        cargo(["fmt", "-p", "glyphux-godot", "--check"])
+        cargo(["clippy", "-p", "glyphux-godot", "--all-targets", "--", "-D", "warnings"])
+        return
+
+    library, file_name = godot_platform()
+    # The workspace's `godot` profile: release, with unwinding (see the root Cargo.toml).
+    profile = "debug" if args.dev else "godot"
+    cargo(["build", "-p", "glyphux-godot"] + ([] if args.dev else ["--profile", "godot"]))
+    built = target_directory() / profile / library
+    slots = ["debug"] if args.dev else ["debug", "release"]
+    print("copying the library")
+    for slot in slots:
+        copy(built, ADDON / "bin" / file_name(slot))
+    if args.project:
+        install(args.project)
+
+
+if __name__ == "__main__":
+    main()

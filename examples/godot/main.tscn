@@ -1,0 +1,134 @@
+[gd_scene load_steps=11 format=3]
+
+[ext_resource type="Script" path="res://main.gd" id="1_main"]
+[ext_resource type="FontFile" path="res://fonts/InterVariable-Latin.ttf" id="2_inter"]
+[ext_resource type="FontVariation" path="res://fonts/inter_heavy.tres" id="3_heavy"]
+[ext_resource type="FontVariation" path="res://fonts/inter_light.tres" id="4_light"]
+[ext_resource type="FontFile" path="res://fonts/NotoSansArabic-Subset.ttf" id="5_arabic"]
+[ext_resource type="FontFile" path="res://fonts/NotoSansDevanagari-Subset.ttf" id="6_devanagari"]
+[ext_resource type="FontFile" path="res://fonts/NotoSansThai-Subset.ttf" id="7_thai"]
+[ext_resource type="Shader" path="res://atlas_view.gdshader" id="8_atlas"]
+[ext_resource type="FontVariation" path="res://fonts/inter_emoji.tres" id="9_emoji"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_atlas"]
+shader = ExtResource("8_atlas")
+
+[node name="Main" type="Node2D"]
+script = ExtResource("1_main")
+
+[node name="Background" type="ColorRect" parent="."]
+offset_right = 1280.0
+offset_bottom = 720.0
+color = Color(0.07, 0.08, 0.1, 1)
+
+[node name="Title" type="GlyphuxLabel" parent="."]
+position = Vector2(60, 100)
+text = "Glyphux in Godot"
+font = ExtResource("3_heavy")
+font_size = 72.0
+glow_color = Color(1, 0.55, 0.15, 0.85)
+glow_radius = 16.0
+
+[node name="Subtitle" type="GlyphuxLabel" parent="."]
+position = Vector2(64, 146)
+text = "Distance fields generated on the GPU the first time each glyph is drawn, at the size it is drawn."
+font = ExtResource("4_light")
+font_size = 20.0
+color = Color(0.72, 0.75, 0.82, 1)
+
+[node name="Ladder" type="Node2D" parent="."]
+position = Vector2(64, 200)
+
+[node name="Outline" type="GlyphuxLabel" parent="."]
+position = Vector2(64, 620)
+text = "Outline"
+font = ExtResource("3_heavy")
+font_size = 44.0
+color = Color(1, 0.86, 0.3, 1)
+outline_color = Color(0.45, 0.1, 0.05, 1)
+outline_width = 4.0
+
+[node name="Glow" type="GlyphuxLabel" parent="."]
+position = Vector2(270, 620)
+text = "Glow"
+font = ExtResource("3_heavy")
+font_size = 44.0
+color = Color(0.85, 1, 1, 1)
+glow_color = Color(0.2, 0.8, 1, 0.9)
+glow_radius = 12.0
+
+[node name="Shadow" type="GlyphuxLabel" parent="."]
+position = Vector2(420, 620)
+text = "Shadow"
+font = ExtResource("3_heavy")
+font_size = 44.0
+shadow_color = Color(0, 0, 0, 0.75)
+shadow_offset = Vector2(5, 5)
+shadow_blur = 4.0
+
+[node name="Weight" type="GlyphuxLabel" parent="."]
+position = Vector2(620, 620)
+text = "Weight"
+font = ExtResource("2_inter")
+font_size = 44.0
+color = Color(0.75, 1, 0.6, 1)
+
+[node name="Arabic" type="GlyphuxLabel" parent="."]
+position = Vector2(64, 520)
+text = "تكبير وانزلاق"
+font = ExtResource("5_arabic")
+font_size = 36.0
+width = 220.0
+
+[node name="Devanagari" type="GlyphuxLabel" parent="."]
+position = Vector2(330, 520)
+text = "ज़ूम और ग्लाइड"
+font = ExtResource("6_devanagari")
+font_size = 36.0
+width = 220.0
+
+[node name="Thai" type="GlyphuxLabel" parent="."]
+position = Vector2(620, 520)
+text = "ซูมและเลื่อน"
+font = ExtResource("7_thai")
+font_size = 36.0
+width = 220.0
+
+[node name="Zoom" type="GlyphuxLabel" parent="."]
+position = Vector2(1060, 320)
+text = "Zoom"
+font = ExtResource("3_heavy")
+font_size = 24.0
+color = Color(1, 0.75, 0.85, 1)
+outline_color = Color(0.3, 0.05, 0.2, 1)
+outline_width = 1.5
+align = 2
+
+[node name="Emoji" type="GlyphuxLabel" parent="."]
+position = Vector2(860, 500)
+text = "Color emoji 🔥😀🤖"
+font = ExtResource("9_emoji")
+font_size = 40.0
+
+[node name="Spline" type="GlyphuxLabel" parent="."]
+text = "Text on a Curve2D, glyph by glyph, glowing as it goes."
+font = ExtResource("3_heavy")
+font_size = 28.0
+color = Color(1, 0.95, 0.85, 1)
+glow_color = Color(1, 0.35, 0.6, 0.8)
+glow_radius = 8.0
+
+[node name="Stats" type="GlyphuxLabel" parent="."]
+position = Vector2(64, 700)
+text = "..."
+font = ExtResource("2_inter")
+font_size = 14.0
+color = Color(0.55, 0.58, 0.65, 1)
+
+[node name="AtlasView" type="ColorRect" parent="."]
+visible = false
+material = SubResource("ShaderMaterial_atlas")
+offset_left = 760.0
+offset_top = 40.0
+offset_right = 1240.0
+offset_bottom = 520.0

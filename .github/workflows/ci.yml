@@ -1,5 +1,6 @@
-# Formatting, lints and tests for the workspace, a fully optimized build of the web demo, and,
-# on pushes to main once both pass, its deployment to GitHub Pages. Version tags
+# Formatting, lints and tests for the workspace, a fully optimized build of the web demo, a
+# build of the Godot addon, and, on pushes to main once the workspace and the web demo
+# pass, the web demo's deployment to GitHub Pages. Version tags
 # create a GitHub Release and publish the five crates after validation passes.
 name: CI
 
@@ -55,11 +56,12 @@ jobs:
               if "path" in dependency and dependency.get("version") != version:
                   raise SystemExit(f"{name}: dependency version must be {version}")
           demo = tomllib.loads(pathlib.Path("examples/web-demo/Cargo.toml").read_text())["package"]
+          godot = tomllib.loads(pathlib.Path("crates/glyphux-godot/Cargo.toml").read_text())["package"]
           examples = tomllib.loads(pathlib.Path("examples/Cargo.toml").read_text())["package"]
           if demo["version"] != version:
               raise SystemExit("The web demo's version must match the workspace")
-          if any(p.get("publish") is not False for p in (demo, examples)):
-              raise SystemExit("Examples and the web demo must have publish = false")
+          if any(p.get("publish") is not False for p in (demo, godot, examples)):
+              raise SystemExit("Examples, the web demo and the Godot addon must have publish = false")
           PY
       - run: cargo fmt --all --check
       - run: cargo fmt --check
@@ -86,6 +88,22 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo +1.85 check -p glyphux -p glyphux-atlas -p glyphux-cli --all-targets
       - run: cargo +1.93 check -p glyphux-gpu -p glyphux-wgpu -p glyphux-examples --all-targets
+
+  godot:
+    name: Godot addon
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install --no-self-update
+      - uses: Swatinem/rust-cache@v2
+      # The check job lints and tests the crate with the workspace; this builds the addon.
+      # godot-rust ships prebuilt bindings for the 4.6 API: no Godot binary needed.
+      - run: python3 crates/glyphux-godot/build.py --project examples/godot
+      # The build writes the addon's generated shaders: what is committed must be current.
+      - name: Generated shaders are up to date
+        run: |
+          git status --porcelain crates/glyphux-godot/addons/glyphux/shaders/generated
+          test -z "$(git status --porcelain crates/glyphux-godot/addons/glyphux/shaders/generated)"
 
   web-demo:
     name: Web demo (wasm)
@@ -150,7 +168,7 @@ jobs:
 
   release:
     name: Create GitHub Release
-    needs: [check, msrv, web-demo]
+    needs: [check, msrv, godot, web-demo]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:

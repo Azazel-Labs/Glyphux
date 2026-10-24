@@ -1,0 +1,25 @@
+; The Glyphux addon: GlyphuxLabel, GlyphuxRichLabel and GlyphuxLabel3D, and the Glyphux
+; singleton.
+; build.py compiles the libraries into bin/ ("debug" is what the editor and debug exports
+; load, "release" release exports).
+[configuration]
+entry_symbol = "gdext_rust_init"
+compatibility_minimum = "4.6"
+reloadable = false
+
+[libraries]
+windows.debug.x86_64 = "res://addons/glyphux/bin/glyphux.windows.debug.x86_64.dll"
+windows.release.x86_64 = "res://addons/glyphux/bin/glyphux.windows.release.x86_64.dll"
+windows.debug.arm64 = "res://addons/glyphux/bin/glyphux.windows.debug.arm64.dll"
+windows.release.arm64 = "res://addons/glyphux/bin/glyphux.windows.release.arm64.dll"
+linux.debug.x86_64 = "res://addons/glyphux/bin/libglyphux.linux.debug.x86_64.so"
+linux.release.x86_64 = "res://addons/glyphux/bin/libglyphux.linux.release.x86_64.so"
+linux.debug.arm64 = "res://addons/glyphux/bin/libglyphux.linux.debug.arm64.so"
+linux.release.arm64 = "res://addons/glyphux/bin/libglyphux.linux.release.arm64.so"
+macos.debug = "res://addons/glyphux/bin/libglyphux.macos.debug.dylib"
+macos.release = "res://addons/glyphux/bin/libglyphux.macos.release.dylib"
+
+[icons]
+GlyphuxLabel = "res://addons/glyphux/icons/GlyphuxLabel.svg"
+GlyphuxRichLabel = "res://addons/glyphux/icons/GlyphuxRichLabel.svg"
+GlyphuxLabel3D = "res://addons/glyphux/icons/GlyphuxLabel3D.svg"

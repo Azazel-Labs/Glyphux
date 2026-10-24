@@ -6,6 +6,7 @@ members = [
     "crates/glyphux-cli",
     "crates/glyphux-gpu",
     "crates/glyphux-wgpu",
+    "crates/glyphux-godot",
     "examples",
 ]
 # Its own workspace: the web demo is wasm32-only (its .cargo/config.toml sets the target).
@@ -33,6 +34,12 @@ clap = { version = "4.6", default-features = false, features = ["std", "help", "
 codegen-units = 1
 lto = "thin"
 panic = "abort"
+
+# The Godot addon's library (crates/glyphux-godot/build.py): release, but unwinding, so
+# godot-rust turns a panic in a callback into a Godot error instead of taking the editor down.
+[profile.godot]
+inherits = "release"
+panic = "unwind"
 
 [profile.bench]
 codegen-units = 1

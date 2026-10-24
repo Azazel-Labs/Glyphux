@@ -1,0 +1,64 @@
+[package]
+name = "glyphux-godot"
+version.workspace = true
+edition.workspace = true
+rust-version = "1.94"
+publish = false
+license.workspace = true
+repository.workspace = true
+description = "The GDExtension of the Glyphux Godot addon (godot-rust): GlyphuxLabel nodes with distance fields generated on the GPU as needed"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+glyphux-wgpu.workspace = true
+# Prebuilt bindings for the Godot 4.6 API: building needs no Godot binary.
+godot = { version = "=0.5.5", features = ["api-4-6"] }
+
+[build-dependencies]
+# build.rs translates the shaders with naga (so the library translates nothing at run time).
+glyphux-gpu = { workspace = true, default-features = false, features = ["glsl", "spirv"] }
+
+# The workspace's lint set (inheriting it allows no exceptions), except `unsafe_code`:
+# GDExtension's entry point is an `unsafe impl`.
+[lints.rust]
+rust_2018_idioms = { level = "warn", priority = -1 }
+unused_qualifications = "warn"
+unused_lifetimes = "warn"
+trivial_numeric_casts = "warn"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+# Restriction lints worth having.
+dbg_macro = "warn"
+todo = "warn"
+# Geometry / raster code: casts between pixel indices and coordinates are the norm, and
+# short math names (x, y, t, a, b) are clearer than long ones.
+cast_lossless = "allow"
+cast_possible_truncation = "allow"
+cast_possible_wrap = "allow"
+cast_precision_loss = "allow"
+cast_sign_loss = "allow"
+float_cmp = "allow"
+many_single_char_names = "allow"
+similar_names = "allow"
+suboptimal_flops = "allow"
+unreadable_literal = "allow"
+# Documentation and API style choices.
+doc_markdown = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+too_many_arguments = "allow"
+too_many_lines = "allow"
+items_after_statements = "allow"
+return_self_not_must_use = "allow"
+struct_excessive_bools = "allow"
+# Deliberate in the hot paths: forced inlining and branchless boolean arithmetic (`&`, `|`)
+# that the optimizer vectorizes; `_pad` fields mirror WGSL struct layouts.
+inline_always = "allow"
+needless_bitwise_bool = "allow"
+pub_underscore_fields = "allow"
