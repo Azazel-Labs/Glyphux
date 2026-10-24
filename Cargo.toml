@@ -22,7 +22,9 @@ repository = "https://github.com/Azazel-Labs/Glyphux"
 [workspace.dependencies]
 glyphux = { path = "crates/glyphux", version = "0.4.1" }
 glyphux-atlas = { path = "crates/glyphux-atlas", version = "0.4.1" }
-glyphux-gpu = { path = "crates/glyphux-gpu", version = "0.4.1" }
+# No default features: members that inherit it pick theirs (glyphux-wgpu's `shaping` turns
+# shaping on), and a member cannot turn off defaults the workspace entry enables.
+glyphux-gpu = { path = "crates/glyphux-gpu", version = "0.4.1", default-features = false }
 glyphux-wgpu = { path = "crates/glyphux-wgpu", version = "0.4.1" }
 bytemuck = { version = "1.25", default-features = false, features = ["derive"] }
 # naga must stay on the version wgpu uses (glyphux-gpu validates its shaders with it).
