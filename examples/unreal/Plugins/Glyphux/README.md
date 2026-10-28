@@ -22,9 +22,11 @@ monolithic builds alike.
 
 ## Install
 
-1. Install [Rust](https://rustup.rs) (stable). Cargo fetches Ferreal from
-   [its repository](https://github.com/Azazel-Labs/Ferreal) on the first build (the version in `rust/Cargo.lock`;
-   `cargo update -p ferreal` in `rust/` moves to the newest).
+1. Install [rustup](https://rustup.rs), once. The first build installs the rest: the Rust
+   toolchain the crate pins (`rust/rust-toolchain.toml`), the one target the build needs,
+   and the crates, Ferreal among them, from
+   [its repository](https://github.com/Azazel-Labs/Ferreal) (the version in
+   `rust/Cargo.lock`; `cargo update -p ferreal` in `rust/` moves to the newest).
 
 2. Copy `Plugins/Glyphux` into your project's `Plugins` folder, or open the demo project
    (`examples/unreal/GlyphuxDemo.uproject`), which has it. If you copy it elsewhere, fix the

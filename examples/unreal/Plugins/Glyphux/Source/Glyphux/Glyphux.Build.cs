@@ -80,6 +80,7 @@ public class Glyphux : ModuleRules
 		}
 		if (Environment.GetEnvironmentVariable("FERREAL_SKIP_CARGO") != "1")
 		{
+			AddRustTarget(CrateDir, Triple);
 			bool bNeedsMetadata = RunCargo(CrateDir, string.Format(
 				"build --manifest-path \"{0}\" --lib --profile {1} --target {2} --target-dir \"{3}\"",
 				Path.Combine(CrateDir, "Cargo.toml"), Profile, Triple, TargetDir), Metadata);
@@ -151,6 +152,38 @@ public class Glyphux : ModuleRules
 			}
 		}
 		return Newest;
+	}
+
+	/// <summary>
+	/// Has rustup install the target Triple (and the crate's toolchain, rust-toolchain.toml)
+	/// if they are missing: nothing to do once they are there. Without rustup (a Rust
+	/// installed otherwise), cargo reports a missing target itself.
+	/// </summary>
+	private static void AddRustTarget(string WorkingDirectory, string Triple)
+	{
+		ProcessStartInfo Start = new ProcessStartInfo("rustup", "target add " + Triple)
+		{
+			WorkingDirectory = WorkingDirectory,
+			UseShellExecute = false,
+			RedirectStandardOutput = true,
+			RedirectStandardError = true,
+			CreateNoWindow = true,
+		};
+		try
+		{
+			using Process Rustup = Process.Start(Start);
+			System.Threading.Tasks.Task<string> Output = Rustup.StandardOutput.ReadToEndAsync();
+			string Errors = Rustup.StandardError.ReadToEnd();
+			Rustup.WaitForExit();
+			if (Rustup.ExitCode != 0)
+			{
+				Console.WriteLine("Rust: rustup target add " + Triple + " failed (cargo will say what is missing):\n" + Output.Result + Errors);
+			}
+		}
+		catch (Exception)
+		{
+			// No rustup.
+		}
 	}
 
 	/// <summary>

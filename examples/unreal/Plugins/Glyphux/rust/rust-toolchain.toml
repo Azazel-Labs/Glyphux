@@ -1,0 +1,8 @@
+# The plugin's own Rust, so a copy outside the Glyphux repository builds with it too: rustup
+# installs it on the first build. The target each build needs is added by Glyphux.Build.cs
+# (listing them here would install them all on every machine).
+[toolchain]
+channel = "stable"
+profile = "minimal"
+# For editors: formatting, lints, and the standard library's source for rust-analyzer.
+components = ["rustfmt", "clippy", "rust-src"]
