@@ -5,9 +5,9 @@
 use std::collections::HashMap;
 use std::ops::Range;
 
+use ferreal::Obj;
 use glyphux_gpu::ShapingFont;
 use glyphux_gpu::paragraph::{self, ParagraphStyle, Paragraphs, Span};
-use rivet::Obj;
 
 use crate::FontFace;
 use crate::bbcode::{self, Attrs};
@@ -190,7 +190,7 @@ impl Fonts {
             let font = *loaded.entry(path.clone()).or_insert_with(|| {
                 let f = s.load_font(path);
                 if f.is_none() {
-                    rivet::warn!("glyphux: [font={path}]: not a font face asset; using the label's");
+                    ferreal::warn!("glyphux: [font={path}]: not a font face asset; using the label's");
                 }
                 f
             });

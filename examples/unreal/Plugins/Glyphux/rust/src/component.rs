@@ -7,8 +7,8 @@
 //! does nothing unless the text changed or that scale needs another atlas field level. It
 //! builds the mesh from the quads Rust gives it, `PixelSize` world units per layout pixel.
 
+use ferreal::prelude::*;
 use glyphux_gpu::paragraph::ParagraphStyle;
-use rivet::prelude::*;
 
 use crate::label::{self, Align, Label, Settings, VerticalAlign};
 use crate::layout::Fonts;

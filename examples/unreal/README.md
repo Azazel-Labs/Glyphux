@@ -12,9 +12,8 @@ An Unreal Engine 5.8 project with the [Glyphux plugin](Plugins/Glyphux) and one 
 
 ## Run
 
-1. Install [Rust](https://rustup.rs) and clone [Rivet](https://github.com/Azazel-Labs/rivet)
-   next to this repository (`git clone https://github.com/Azazel-Labs/rivet` beside the
-   `Glyphux` folder).
+1. Install [Rust](https://rustup.rs). Cargo fetches [Ferreal](https://github.com/Azazel-Labs/Ferreal) on the first
+   build.
 2. Generate the project files (right-click `GlyphuxDemo.uproject` > Generate Visual Studio
    project files, or `GenerateProjectFiles` with the project) and build the
    `GlyphuxDemoEditor` target, or open the .uproject and let Unreal build it. The build

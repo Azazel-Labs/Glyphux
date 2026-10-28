@@ -1,5 +1,5 @@
 #include "Modules/ModuleManager.h"
-#include "Rivet/RivetGlyphux.h"
+#include "Ferreal/FerrealGlyphux.h"
 
 class FGlyphuxModule : public IModuleInterface
 {
@@ -7,7 +7,7 @@ public:
 	virtual void StartupModule() override
 	{
 		// Hands Rust its tables of C++ functions (the classes would on first use anyway).
-		Rivet::Glyphux::Register();
+		Ferreal::Glyphux::Register();
 	}
 };
 

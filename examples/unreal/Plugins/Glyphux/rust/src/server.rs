@@ -13,11 +13,11 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
 
+use ferreal::Obj;
 use glyphux_gpu::color_atlas::{self, Rect};
 use glyphux_gpu::glyphux::color::{ColorField, ColorFieldConfig};
 use glyphux_gpu::glyphux::io::font::ttf_parser;
 use glyphux_gpu::{AtlasConfig, Binding, GlyphAtlas, GlyphKey, Kernel, Shaper, ShapingFont};
-use rivet::Obj;
 
 use crate::{BlockBase, BlockSink, ComponentBase, ComponentSink, FontFace, Gpu, Subsystem};
 
@@ -141,7 +141,7 @@ pub fn init(gpu: Obj<Subsystem>) {
     let atlas = match GlyphAtlas::new(AtlasConfig::default()) {
         Ok(a) => a,
         Err(e) => {
-            rivet::error!("glyphux: {e}");
+            ferreal::error!("glyphux: {e}");
             return;
         }
     };
@@ -284,7 +284,7 @@ impl Server {
         } else {
             let bytes = self.gpu.font_bytes(face);
             if bytes.is_empty() {
-                rivet::warn!("glyphux: cannot read the font {path} (its data is not loaded)");
+                ferreal::warn!("glyphux: cannot read the font {path} (its data is not loaded)");
                 return None;
             }
             let d = Arc::new(bytes);
@@ -394,7 +394,7 @@ impl Server {
         ) {
             Ok(f) => f,
             Err(e) => {
-                rivet::info!("glyphux: color glyph {glyph} left to fallback fonts: {e}");
+                ferreal::info!("glyphux: color glyph {glyph} left to fallback fonts: {e}");
                 return None;
             }
         };
@@ -418,7 +418,7 @@ impl Server {
                 (self.color_free.len() - 1, rect)
             }
             None => {
-                rivet::warn!("glyphux: the color glyph pages are full");
+                ferreal::warn!("glyphux: the color glyph pages are full");
                 return None;
             }
         };

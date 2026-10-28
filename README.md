@@ -58,7 +58,7 @@ The generator supports true SDF, pseudo-SDF, **multi-channel SDF (MSDF)** and
     </tr>
     <tr>
       <td><a href="examples/unreal/Plugins/Glyphux"><code>glyphux-unreal</code></a></td>
-      <td>An Unreal Engine 5.8 plugin: a UMG widget, a scene component, text on any mesh and text as Niagara particles, generated in Unreal's render graph. Its classes are written in Rust with <a href="https://github.com/Azazel-Labs/rivet">Rivet</a>, which generates their C++; the module's build runs cargo and links the Rust as a static library.</td>
+      <td>An Unreal Engine 5.8 plugin: a UMG widget, a scene component, text on any mesh and text as Niagara particles, generated in Unreal's render graph. Its classes are written in Rust with <a href="https://github.com/Azazel-Labs/Ferreal">Ferreal</a>, which generates their C++; the module's build runs cargo and links the Rust as a static library.</td>
     </tr>
   </tbody>
 </table>

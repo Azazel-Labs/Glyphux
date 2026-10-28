@@ -1,6 +1,6 @@
 //! The Rust half of the Glyphux Unreal Engine plugin.
 //!
-//! The text classes are written here, with Rivet: `UGlyphuxTextBlock` (a UMG widget) and
+//! The text classes are written here, with Ferreal: `UGlyphuxTextBlock` (a UMG widget) and
 //! `UGlyphuxTextComponent` (a scene component drawing text in the world). Their properties
 //! are `UPROPERTY`s on the Unreal objects; laying out the text, the glyph atlas, color glyphs
 //! and the glyph records the materials read are Rust. The C++ half (`../Source/Glyphux`) does
@@ -23,9 +23,9 @@ mod layout;
 mod records;
 mod server;
 
-use rivet::prelude::*;
+use ferreal::prelude::*;
 
-rivet::module!();
+ferreal::module!();
 
 engine_class!(pub FontFace = "UFontFace" in "Engine/FontFace.h");
 engine_class!(pub Subsystem = "UGlyphuxSubsystem" in "GlyphuxSubsystem.h", bases(Gpu));
@@ -82,32 +82,32 @@ pub trait ComponentSink {
     fn invalidate_text(&self);
 }
 
-/// `Rivet::Glyphux::Init`: the subsystem started.
+/// `Ferreal::Glyphux::Init`: the subsystem started.
 #[export]
 pub fn init(subsystem: Obj<Subsystem>) {
     server::init(subsystem);
 }
 
-/// `Rivet::Glyphux::Tick`: once per frame, before the labels refresh: starts the atlas'
+/// `Ferreal::Glyphux::Tick`: once per frame, before the labels refresh: starts the atlas'
 /// frame and asks labels showing glyphs whose fields were refined to refresh.
 #[export]
 pub fn tick() {
     server::tick();
 }
 
-/// `Rivet::Glyphux::Flush`: generates the glyphs requested since the last flush.
+/// `Ferreal::Glyphux::Flush`: generates the glyphs requested since the last flush.
 #[export]
 pub fn flush() {
     server::flush();
 }
 
-/// `Rivet::Glyphux::Shutdown`: the subsystem stops; the atlas is dropped.
+/// `Ferreal::Glyphux::Shutdown`: the subsystem stops; the atlas is dropped.
 #[export]
 pub fn shutdown() {
     server::shutdown();
 }
 
-/// `Rivet::Glyphux::Stats`: the atlas' counters, for debugging.
+/// `Ferreal::Glyphux::Stats`: the atlas' counters, for debugging.
 #[export]
 pub fn stats() -> String {
     server::stats()

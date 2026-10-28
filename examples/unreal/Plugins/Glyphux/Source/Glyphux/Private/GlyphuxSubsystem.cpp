@@ -8,7 +8,7 @@
 #include "Materials/MaterialInterface.h"
 #include "Misc/FileHelper.h"
 #include "RenderingThread.h"
-#include "Rivet/RivetGlyphux.h"
+#include "Ferreal/FerrealGlyphux.h"
 #include "TextureResource.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogGlyphux, Log, All);
@@ -50,14 +50,14 @@ void UGlyphuxSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 		return;
 	}
 	Gpu = MakeShared<FGlyphuxGpu, ESPMode::ThreadSafe>(PageSize, MaxPages);
-	Rivet::Glyphux::Init(this);
+	Ferreal::Glyphux::Init(this);
 	bStarted = true;
 }
 
 void UGlyphuxSubsystem::Deinitialize()
 {
 	bStarted = false;
-	Rivet::Glyphux::Shutdown();
+	Ferreal::Glyphux::Shutdown();
 	Pending.Reset();
 	// The render thread owns the GPU side from here: release it there, after what is queued.
 	TSharedPtr<FGlyphuxGpu, ESPMode::ThreadSafe> Released = MoveTemp(Gpu);
@@ -68,7 +68,7 @@ void UGlyphuxSubsystem::Deinitialize()
 
 void UGlyphuxSubsystem::Tick(float DeltaTime)
 {
-	Rivet::Glyphux::Tick();
+	Ferreal::Glyphux::Tick();
 }
 
 TStatId UGlyphuxSubsystem::GetStatId() const
@@ -138,7 +138,7 @@ UMaterialInterface* UGlyphuxSubsystem::GetSurfaceMaterial()
 
 FString UGlyphuxSubsystem::GetGlyphuxStats()
 {
-	return Rivet::Glyphux::Stats();
+	return Ferreal::Glyphux::Stats();
 }
 
 void UGlyphuxSubsystem::BeginBatch(uint32 Pages)

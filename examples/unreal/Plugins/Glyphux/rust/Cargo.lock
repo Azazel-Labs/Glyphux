@@ -89,6 +89,48 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "00d174d5400e5e8fd687ad1049e2f578285fa914201b1af7e8b112a4546bd826"
 
 [[package]]
+name = "ferreal"
+version = "0.1.0"
+source = "git+https://github.com/Azazel-Labs/Ferreal#5c61d375f57f9e80d176fe542eb006c90c7f469f"
+dependencies = [
+ "ferreal-macros",
+]
+
+[[package]]
+name = "ferreal-build"
+version = "0.1.0"
+source = "git+https://github.com/Azazel-Labs/Ferreal#5c61d375f57f9e80d176fe542eb006c90c7f469f"
+dependencies = [
+ "ferreal-model",
+ "proc-macro2",
+ "quote",
+ "serde",
+ "serde_json",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "ferreal-macros"
+version = "0.1.0"
+source = "git+https://github.com/Azazel-Labs/Ferreal#5c61d375f57f9e80d176fe542eb006c90c7f469f"
+dependencies = [
+ "ferreal-model",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "ferreal-model"
+version = "0.1.0"
+source = "git+https://github.com/Azazel-Labs/Ferreal#5c61d375f57f9e80d176fe542eb006c90c7f469f"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "foldhash"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -127,9 +169,9 @@ dependencies = [
 name = "glyphux-unreal"
 version = "0.4.1"
 dependencies = [
+ "ferreal",
+ "ferreal-build",
  "glyphux-gpu",
- "rivet",
- "rivet-build",
 ]
 
 [[package]]
@@ -281,44 +323,6 @@ dependencies = [
  "font-types",
  "once_cell",
  "yoke",
-]
-
-[[package]]
-name = "rivet"
-version = "0.1.0"
-dependencies = [
- "rivet-macros",
-]
-
-[[package]]
-name = "rivet-build"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "rivet-model",
- "serde",
- "serde_json",
- "syn 2.0.119",
-]
-
-[[package]]
-name = "rivet-macros"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "rivet-model",
- "syn 2.0.119",
-]
-
-[[package]]
-name = "rivet-model"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
 ]
 
 [[package]]

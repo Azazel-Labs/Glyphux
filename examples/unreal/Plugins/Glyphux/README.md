@@ -16,23 +16,19 @@ outline, glow and drop shadow effects, with BBCode for all of it.
 
 The plugin is mostly Rust: the classes' properties, layout, BBCode and the GPU work are in
 `rust/`, and the C++ that makes them Unreal classes is generated from it by
-[Rivet](https://github.com/Azazel-Labs/rivet) when the module builds. The Rust compiles to a
+[Ferreal](https://github.com/Azazel-Labs/Ferreal) when the module builds. The Rust compiles to a
 static library linked into the module, so it works in the editor, in packaged games and in
 monolithic builds alike.
 
 ## Install
 
-1. Install [Rust](https://rustup.rs) (stable). Clone Rivet next to the Glyphux repository
-   (the crate finds it at `../rivet` from the Glyphux checkout):
-
-   ```
-   git clone https://github.com/Azazel-Labs/Glyphux
-   git clone https://github.com/Azazel-Labs/rivet
-   ```
+1. Install [Rust](https://rustup.rs) (stable). Cargo fetches Ferreal from
+   [its repository](https://github.com/Azazel-Labs/Ferreal) on the first build (the version in `rust/Cargo.lock`;
+   `cargo update -p ferreal` in `rust/` moves to the newest).
 
 2. Copy `Plugins/Glyphux` into your project's `Plugins` folder, or open the demo project
    (`examples/unreal/GlyphuxDemo.uproject`), which has it. If you copy it elsewhere, fix the
-   two path dependencies in `rust/Cargo.toml` (glyphux-gpu and rivet).
+   path of the glyphux-gpu dependency in `rust/Cargo.toml`.
 3. Build the project (from your IDE, or by opening the .uproject and letting Unreal build
    it). `Source/Glyphux/Glyphux.Build.cs` runs `cargo build`, which also writes the
    generated C++ and shaders; the first build compiles the Rust dependencies and takes a
@@ -43,11 +39,11 @@ monolithic builds alike.
    materials, and for shattering text, `Content/Python/glyphux_shards.py`. MATERIALS.md
    says what they make, to build the materials by hand instead.
 
-To call engine classes from the plugin's Rust with `rivet::engine!` (typed bindings
-generated from Unreal's reflection data), also copy Rivet's `unreal/Rivet` plugin into the
+To call engine classes from the plugin's Rust with `ferreal::engine!` (typed bindings
+generated from Unreal's reflection data), also copy the `unreal/Ferreal` plugin of [Ferreal's repository](https://github.com/Azazel-Labs/Ferreal) into the
 project's `Plugins`; the plugin does not need it as it is.
 
-Set `RIVET_SKIP_CARGO=1` in the environment to link the library already built (in
+Set `FERREAL_SKIP_CARGO=1` in the environment to link the library already built (in
 `rust/target/unreal`) without running cargo: for build machines without Rust, with the
 library and the generated files committed.
 
@@ -108,7 +104,7 @@ NIAGARA.md say what for), **Refresh** (lay out again after changing fonts from B
 | Path | |
 |---|---|
 | `rust/` | The crate: the classes (`block.rs`, `component.rs`, `label.rs`), layout, BBCode, the atlas and font server (`server.rs`), the quads (`draw.rs`). `build.rs` writes the generated files. |
-| `Source/Glyphux/` | The C++ parents of the Rust classes (drawing with Slate and a procedural mesh), the subsystem that owns the atlas, the draw data textures. `Public/Rivet`, `Private/Rivet` and `Private/Generated` are generated. |
+| `Source/Glyphux/` | The C++ parents of the Rust classes (drawing with Slate and a procedural mesh), the subsystem that owns the atlas, the draw data textures. `Public/Ferreal`, `Private/Ferreal` and `Private/Generated` are generated. |
 | `Source/GlyphuxShaders/` | The field generation kernels as global shaders in the render graph (loaded early, for the shader directory). `Generated/` is generated. |
 | `Source/GlyphuxNiagara/` | The Niagara function library and shard sets. |
 | `Shaders/Private/` | `GlyphuxMaterial.ush`, the materials' functions; `Generated/` holds the kernels and shading code, translated by naga from glyphux's WGSL. |

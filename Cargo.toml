@@ -10,7 +10,7 @@ members = [
     "examples/godot/addons/glyphux/rust",
 ]
 # Their own workspaces: the web demo is wasm32-only (its .cargo/config.toml sets the
-# target); the Unreal plugin's crate depends on Rivet, cloned next to this repository.
+# target); the Unreal plugin's crate builds for Unreal with its own profile.
 exclude = ["examples/web-demo", "examples/unreal/Plugins/Glyphux/rust"]
 
 [workspace.package]

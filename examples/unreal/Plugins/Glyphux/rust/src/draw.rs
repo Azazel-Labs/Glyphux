@@ -111,7 +111,7 @@ impl GlyphStyle {
 
     /// The foreground color COLR glyphs may use, as sRGB bytes.
     pub fn foreground(&self) -> [u8; 4] {
-        rivet::LinearColor::new(self.color[0], self.color[1], self.color[2], self.color[3])
+        ferreal::LinearColor::new(self.color[0], self.color[1], self.color[2], self.color[3])
             .to_srgb()
             .map(|v| (v.clamp(0.0, 1.0) * 255.0).round() as u8)
     }

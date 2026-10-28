@@ -1,11 +1,11 @@
 // The Glyphux plugin's main module: the text classes (their C++ parents, the subsystem, the
 // drawing) and the Rust library that holds the rest. The classes' Rust is in ../../rust;
-// building it (cargo, below) also writes the generated C++ (Public/Rivet, Private/Rivet,
+// building it (cargo, below) also writes the generated C++ (Public/Ferreal, Private/Ferreal,
 // Private/Generated), the kernels' shader classes (../GlyphuxShaders) and the shaders
 // (../../Shaders/Private/Generated).
 //
-// Building needs Rust (https://rustup.rs) and a clone of Rivet next to the Glyphux repository
-// (see the plugin's README). RIVET_SKIP_CARGO=1 links the library already built instead.
+// Building needs Rust (https://rustup.rs); cargo fetches Ferreal from its repository (see the
+// plugin's README). FERREAL_SKIP_CARGO=1 links the library already built instead.
 
 using System;
 using System.Collections.Generic;
@@ -33,10 +33,10 @@ public class Glyphux : ModuleRules
 	/// Builds the Rust crate at CrateDir (cargo build, which runs its build.rs and so writes
 	/// the generated C++) and links its static library, named LibraryName (the crate's name
 	/// with underscores). Profile is the cargo profile: "unreal" is release with unwinding,
-	/// declared in the workspace's Cargo.toml. RIVET_SKIP_CARGO=1 in the environment links the
+	/// declared in the workspace's Cargo.toml. FERREAL_SKIP_CARGO=1 in the environment links the
 	/// library already built (for machines without Rust, with the libraries committed).
-	/// The engine classes the crate names in rivet::engine! are bound from the reflection
-	/// data of the Rivet plugin's exporter (see FindEngineMetadata).
+	/// The engine classes the crate names in ferreal::engine! are bound from the reflection
+	/// data of the Ferreal plugin's exporter (see FindEngineMetadata).
 	/// </summary>
 	private void BuildRust(ReadOnlyTargetRules Target, string CrateDir, string LibraryName, string Profile)
 	{
@@ -70,7 +70,7 @@ public class Glyphux : ModuleRules
 		string TargetDir = Path.Combine(CrateDir, "target", "unreal");
 		string Library = Path.Combine(TargetDir, Triple, Profile, FileName);
 
-		// The engine's reflection data, for the classes rivet::engine! names: what the Rivet
+		// The engine's reflection data, for the classes ferreal::engine! names: what the Ferreal
 		// plugin's exporter wrote during the last build (Unreal Header Tool runs after this
 		// file). A new export makes the next build run this file, and cargo, again.
 		string Metadata = FindEngineMetadata(Target);
@@ -78,7 +78,7 @@ public class Glyphux : ModuleRules
 		{
 			ExternalDependencies.Add(Metadata);
 		}
-		if (Environment.GetEnvironmentVariable("RIVET_SKIP_CARGO") != "1")
+		if (Environment.GetEnvironmentVariable("FERREAL_SKIP_CARGO") != "1")
 		{
 			bool bNeedsMetadata = RunCargo(CrateDir, string.Format(
 				"build --manifest-path \"{0}\" --lib --profile {1} --target {2} --target-dir \"{3}\"",
@@ -87,7 +87,7 @@ public class Glyphux : ModuleRules
 			{
 				// The first build with new engine classes: this build exports their reflection
 				// data, the next one generates their bindings and links the Rust.
-				Console.WriteLine("Rust: the reflection data rivet::engine! needs is not exported yet; this build exports it (the Rivet plugin). Build again to generate the bindings and link the Rust.");
+				Console.WriteLine("Rust: the reflection data ferreal::engine! needs is not exported yet; this build exports it (the Ferreal plugin). Build again to generate the bindings and link the Rust.");
 				if (!File.Exists(Library))
 				{
 					return;
@@ -111,13 +111,13 @@ public class Glyphux : ModuleRules
 	}
 
 	/// <summary>
-	/// The newest RivetEngine.json the Rivet plugin's exporter wrote (in its RivetMetadata
-	/// module's generated folder), in the project's plugins; RIVET_ENGINE_METADATA, if set,
+	/// The newest FerrealEngine.json the Ferreal plugin's exporter wrote (in its FerrealMetadata
+	/// module's generated folder), in the project's plugins; FERREAL_ENGINE_METADATA, if set,
 	/// instead. Null without either.
 	/// </summary>
 	private static string FindEngineMetadata(ReadOnlyTargetRules Target)
 	{
-		string Set = Environment.GetEnvironmentVariable("RIVET_ENGINE_METADATA");
+		string Set = Environment.GetEnvironmentVariable("FERREAL_ENGINE_METADATA");
 		if (!string.IsNullOrEmpty(Set))
 		{
 			return File.Exists(Set) ? Path.GetFullPath(Set) : null;
@@ -133,17 +133,17 @@ public class Glyphux : ModuleRules
 		}
 		string Newest = null;
 		DateTime NewestTime = DateTime.MinValue;
-		foreach (string Descriptor in Directory.EnumerateFiles(Plugins, "Rivet.uplugin", SearchOption.AllDirectories))
+		foreach (string Descriptor in Directory.EnumerateFiles(Plugins, "Ferreal.uplugin", SearchOption.AllDirectories))
 		{
 			string Build = Path.Combine(Path.GetDirectoryName(Descriptor), "Intermediate", "Build");
 			if (!Directory.Exists(Build))
 			{
 				continue;
 			}
-			foreach (string Json in Directory.EnumerateFiles(Build, "RivetEngine.json", SearchOption.AllDirectories))
+			foreach (string Json in Directory.EnumerateFiles(Build, "FerrealEngine.json", SearchOption.AllDirectories))
 			{
 				DateTime Time = File.GetLastWriteTimeUtc(Json);
-				if (Json.Contains("RivetMetadata") && Time > NewestTime)
+				if (Json.Contains("FerrealMetadata") && Time > NewestTime)
 				{
 					Newest = Json;
 					NewestTime = Time;
@@ -170,7 +170,7 @@ public class Glyphux : ModuleRules
 		};
 		if (Metadata != null)
 		{
-			Start.Environment["RIVET_ENGINE_METADATA"] = Metadata;
+			Start.Environment["FERREAL_ENGINE_METADATA"] = Metadata;
 		}
 		Console.WriteLine("Rust: cargo " + Arguments);
 		Process Cargo;
@@ -180,7 +180,7 @@ public class Glyphux : ModuleRules
 		}
 		catch (Exception E)
 		{
-			throw new BuildException("Rust: cannot run cargo (install Rust from https://rustup.rs, or set RIVET_SKIP_CARGO=1 to link a library already built): " + E.Message);
+			throw new BuildException("Rust: cannot run cargo (install Rust from https://rustup.rs, or set FERREAL_SKIP_CARGO=1 to link a library already built): " + E.Message);
 		}
 		// Read both streams at once: cargo can fill one while we wait on the other.
 		System.Threading.Tasks.Task<string> Output = Cargo.StandardOutput.ReadToEndAsync();
@@ -190,7 +190,7 @@ public class Glyphux : ModuleRules
 		{
 			return false;
 		}
-		if (Errors.Contains("RIVET_NEEDS_ENGINE_METADATA"))
+		if (Errors.Contains("FERREAL_NEEDS_ENGINE_METADATA"))
 		{
 			Console.WriteLine(Errors);
 			return true;

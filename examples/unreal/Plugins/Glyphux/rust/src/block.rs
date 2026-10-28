@@ -5,8 +5,8 @@
 //! at a new size or scale, or after `invalidate_text`, it calls `refresh_text` here, and
 //! draws the quads Rust gives it with the plugin's UI material.
 
+use ferreal::prelude::*;
 use glyphux_gpu::paragraph::ParagraphStyle;
-use rivet::prelude::*;
 
 use crate::label::{self, Align, Label, Settings};
 use crate::layout::Fonts;

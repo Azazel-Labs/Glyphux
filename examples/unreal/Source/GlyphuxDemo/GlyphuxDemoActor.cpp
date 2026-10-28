@@ -6,7 +6,7 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "NiagaraComponent.h"
 #include "NiagaraSystem.h"
-#include "Rivet/GlyphuxTextComponent.h"
+#include "Ferreal/GlyphuxTextComponent.h"
 #include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
 

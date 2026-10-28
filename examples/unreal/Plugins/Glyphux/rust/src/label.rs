@@ -8,9 +8,9 @@
 
 use std::collections::HashMap;
 
+use ferreal::prelude::*;
 use glyphux_gpu::paragraph::{ParagraphStyle, Paragraphs};
 use glyphux_gpu::text::Align as TextAlign;
-use rivet::prelude::*;
 
 use crate::FontFace;
 use crate::bbcode;
