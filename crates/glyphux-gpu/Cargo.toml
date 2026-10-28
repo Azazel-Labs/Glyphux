@@ -20,6 +20,9 @@ glsl = ["dep:naga", "naga/glsl-out"]
 # The compute kernels in SPIR-V with naga (`spirv` module), for backends that build
 # pipelines from SPIR-V (Godot's RenderingDevice).
 spirv = ["dep:naga", "naga/spv-out"]
+# The compute kernels and the shading functions in HLSL with naga (`hlsl` module), for
+# backends whose shaders are HLSL (Unreal Engine's global shaders).
+hlsl = ["dep:naga", "naga/hlsl-out"]
 
 [dependencies]
 glyphux = { workspace = true, features = ["gpu"] }

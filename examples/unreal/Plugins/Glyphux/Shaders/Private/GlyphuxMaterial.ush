@@ -1,0 +1,368 @@
+// The shading of Glyphux text in materials: what the plugin's materials call from a Custom
+// node (MATERIALS.md says how to set them up). glyphux's own shading functions, translated
+// from its WGSL when the plugin's Rust is built (Generated/), do the work; this file reads
+// what they need from the textures Rust fills, as the Godot addon's shaders do.
+//
+// * GlyphuxAtlas: the atlas pages, GlyphuxPages of them stacked vertically (RGBA: MTSDF).
+// * GlyphuxRecords: a record of GLYPHUX_RECORD_TEXELS float texels per monochrome glyph,
+//   GLYPHUX_RECORDS_PER_ROW records per row: its rectangle and texture coordinates (layout
+//   units), colors, outline, weight and effect parameters, glow, shadow, its page, its
+//   animation. Underlines and strikethroughs are records too, of page -1: the exact distance
+//   to their box replaces the atlas (texel 6: its half size), with texture coordinates in
+//   layout units from its center.
+// * GlyphuxColorPages and GlyphuxTables: the color glyph pages (stacked the same way) and,
+//   GLYPHUX_TABLES_WIDTH texels per row, four texels per color glyph (where its tables start,
+//   its configuration, its page and opacity, its animation) then the tables (numbers as
+//   floats, -1 for "none").
+//
+// Every vertex carries its texture coordinates (TexCoord 0) and its glyph's record index and
+// drawing pass (TexCoord 1): 0 shadow and glow, 1 outline, 2 fill, GLYPHUX_PASS_ALL the three
+// at once, GLYPHUX_PASS_COLOR a color glyph, whose texture coordinates are its quad from -1
+// to 1. Colors are linear, and the result has straight alpha: Translucent materials take its
+// rgb as color and a as opacity.
+//
+// Three entry points, one per kind of material (MATERIALS.md):
+//
+// * GlyphuxShade: widgets, whose vertices carry the above.
+// * GlyphuxShadeGlyph: a quad by its index in a quads texture. Text components (their quads
+//   texture, GlyphuxDrawQuads: a procedural mesh's texture coordinates are half precision,
+//   too coarse for the atlas, so its vertices carry only their corner and the quad's index),
+//   and one glyph per Niagara sprite or mesh fragment (the surface quads).
+// * GlyphuxShadeSurface: a whole text on any mesh, by a point in the text's layout.
+
+#ifndef GLYPHUX_MATERIAL
+#define GLYPHUX_MATERIAL
+
+#include "/Plugin/Glyphux/Private/Generated/GlyphuxRecords.ush"
+#include "/Plugin/Glyphux/Private/Generated/GlyphuxTextCore.ush"
+#include "/Plugin/Glyphux/Private/Generated/GlyphuxColorCore.ush"
+
+// Monochrome glyph records.
+
+float4 GlyphuxRecord(Texture2D Records, int Glyph, int K)
+{
+	return Records.Load(int3((Glyph % GLYPHUX_RECORDS_PER_ROW) * GLYPHUX_RECORD_TEXELS + K, Glyph / GLYPHUX_RECORDS_PER_ROW, 0));
+}
+
+float GlyphuxHash(float N)
+{
+	return frac(sin(N) * 43758.5453);
+}
+
+float3 GlyphuxHsv(float H, float S, float V)
+{
+	float3 K = saturate(abs(fmod(H * 6.0 + float3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0);
+	return V * lerp(float3(1.0, 1.0, 1.0), K, S);
+}
+
+float3 GlyphuxSrgbToLinear(float3 C)
+{
+	return lerp(pow((C + 0.055) / 1.055, 2.4), C / 12.92, step(C, 0.04045));
+}
+
+// A decoration's field texel at Q (layout units from its box's center), like the atlas'
+// (0.5 at the edge, Range units across), every channel the true distance.
+float4 GlyphuxBox(float2 Q, float2 HalfSize, float Range)
+{
+	float2 D = abs(Q) - HalfSize;
+	float Outside = length(max(D, 0.0)) + min(max(D.x, D.y), 0.0);
+	return saturate(0.5 - Outside / Range).xxxx;
+}
+
+// Texture coordinates UV of page Layer, in the atlas of Pages pages stacked vertically
+// (kept off the next page's rows by half a texel).
+float2 GlyphuxPage(float2 UV, float Layer, float Pages, float PageHeight)
+{
+	float Y = clamp(UV.y, 0.5 / PageHeight, 1.0 - 0.5 / PageHeight);
+	return float2(UV.x, (Layer + Y) / Pages);
+}
+
+float4 GlyphuxShadeMono(Texture2D Atlas, SamplerState AtlasSampler, Texture2D Records, float2 UV, float2 DuvDx, float2 DuvDy,
+	int Glyph, int Pass, float PxRange, float Pages, float Time)
+{
+	TextGlyph G;
+	G.uv_rect = GlyphuxRecord(Records, Glyph, 1);
+	G.color = GlyphuxRecord(Records, Glyph, 2);
+	G.outline = GlyphuxRecord(Records, Glyph, 3);
+	G.params = GlyphuxRecord(Records, Glyph, 4);
+	G.glow = GlyphuxRecord(Records, Glyph, 5);
+	G.shadow = GlyphuxRecord(Records, Glyph, 7);
+	G.shadow_params = GlyphuxRecord(Records, Glyph, 8);
+	G = text_pass(G, (uint)Pass);
+
+	// Screen pixels per layout unit: how fast the texture coordinates change on screen, and
+	// how many layout units they cover across the glyph's rectangle.
+	float4 Rect = GlyphuxRecord(Records, Glyph, 0);
+	float UvWidth = G.uv_rect.z - G.uv_rect.x;
+	float LayoutPerUv = abs(UvWidth) > 1e-12 ? abs((Rect.z - Rect.x) / UvWidth) : 1.0;
+	float Px = 2.0 / max((length(DuvDx) + length(DuvDy)) * LayoutPerUv, 1e-6);
+	// Lengths (weight, outline, glow, shadow) to screen pixels.
+	G.params.xyz *= Px;
+	G.shadow_params.xyz *= Px;
+
+	float4 At = GlyphuxRecord(Records, Glyph, 9);
+	float4 Rainbow = GlyphuxRecord(Records, Glyph, 11);
+	if (Rainbow.x > 0.0)
+	{
+		float Hue = Time * Rainbow.x + At.y * Rainbow.w * 0.01;
+		G.color.rgb = GlyphuxSrgbToLinear(GlyphuxHsv(frac(Hue), Rainbow.y, Rainbow.z));
+	}
+
+	float Layer = At.x;
+	bool Box = Layer < 0.0;
+	float2 HalfSize = GlyphuxRecord(Records, Glyph, 6).xy;
+	uint Width, Height;
+	Atlas.GetDimensions(Width, Height);
+	float PageHeight = (float)Height / Pages;
+
+	TextPixel P;
+	P.uv = UV;
+	P.duv_dx = DuvDx;
+	P.duv_dy = DuvDy;
+	// A decoration: one layout unit per "texel".
+	P.atlas_size = Box ? float2(1.0, 1.0) : float2((float)Width, PageHeight);
+	P.px_range = PxRange;
+	P.has_true_distance = 1.0;
+
+	float2 PageScale = float2(1.0, 1.0 / Pages);
+	TextSamples V;
+	V.center_ = Box ? GlyphuxBox(UV, HalfSize, G.params.w)
+		: Atlas.SampleGrad(AtlasSampler, GlyphuxPage(UV, Layer, Pages, PageHeight), DuvDx * PageScale, DuvDy * PageScale);
+	V.glow_a = 0.0;
+	V.glow_b = 0.0;
+	V.glow_c = 0.0;
+	V.glow_d = 0.0;
+	V.shadow = 0.0;
+	TextTaps T = text_taps(G, P, V.center_);
+	if (T.glow > 0.5)
+	{
+		V.glow_a = Box ? GlyphuxBox(T.glow_a, HalfSize, G.params.w) : Atlas.SampleLevel(AtlasSampler, GlyphuxPage(T.glow_a, Layer, Pages, PageHeight), 0.0);
+		V.glow_b = Box ? GlyphuxBox(T.glow_b, HalfSize, G.params.w) : Atlas.SampleLevel(AtlasSampler, GlyphuxPage(T.glow_b, Layer, Pages, PageHeight), 0.0);
+		V.glow_c = Box ? GlyphuxBox(T.glow_c, HalfSize, G.params.w) : Atlas.SampleLevel(AtlasSampler, GlyphuxPage(T.glow_c, Layer, Pages, PageHeight), 0.0);
+		V.glow_d = Box ? GlyphuxBox(T.glow_d, HalfSize, G.params.w) : Atlas.SampleLevel(AtlasSampler, GlyphuxPage(T.glow_d, Layer, Pages, PageHeight), 0.0);
+	}
+	if (T.shadow > 0.5)
+	{
+		V.shadow = Box ? GlyphuxBox(T.shadow_uv, HalfSize, G.params.w) : Atlas.SampleLevel(AtlasSampler, GlyphuxPage(T.shadow_uv, Layer, Pages, PageHeight), 0.0);
+	}
+	return text_color(G, P, V);
+}
+
+// Color glyph tables.
+
+float4 GlyphuxTable(Texture2D Tables, uint I)
+{
+	return Tables.Load(int3(I % GLYPHUX_TABLES_WIDTH, I / GLYPHUX_TABLES_WIDTH, 0));
+}
+
+uint GlyphuxWord(float V)
+{
+	return V < 0.0 ? 0xFFFFFFFFu : (uint)(V + 0.5);
+}
+
+uint4 GlyphuxWords(float4 V)
+{
+	return uint4(GlyphuxWord(V.x), GlyphuxWord(V.y), GlyphuxWord(V.z), GlyphuxWord(V.w));
+}
+
+// The table reads GlyphuxColorCore.ush declares.
+
+ColorTile color_tile(Texture2D gx_tables, ColorTables t, uint i)
+{
+	uint4 A = GlyphuxWords(GlyphuxTable(gx_tables, t.tiles + 2u * i));
+	ColorTile R;
+	R.origin = A.xy;
+	R.mode = A.z;
+	R.padding = A.w;
+	R.ids = GlyphuxWords(GlyphuxTable(gx_tables, t.tiles + 2u * i + 1u));
+	return R;
+}
+
+ColorPaint color_paint(Texture2D gx_tables, ColorTables t, uint i)
+{
+	uint B = t.paints + 5u * i;
+	ColorPaint R;
+	R.header = GlyphuxWords(GlyphuxTable(gx_tables, B));
+	R.color = GlyphuxTable(gx_tables, B + 1u);
+	R.row0_ = GlyphuxTable(gx_tables, B + 2u);
+	R.row1_ = GlyphuxTable(gx_tables, B + 3u);
+	R.geometry = GlyphuxTable(gx_tables, B + 4u);
+	return R;
+}
+
+ColorStop color_stop(Texture2D gx_tables, ColorTables t, uint i)
+{
+	ColorStop R;
+	R.color = GlyphuxTable(gx_tables, t.stops + 2u * i);
+	R.offset = GlyphuxTable(gx_tables, t.stops + 2u * i + 1u);
+	return R;
+}
+
+uint color_recipe(Texture2D gx_tables, ColorTables t, uint i)
+{
+	uint W = t.recipes + i;
+	float4 V = GlyphuxTable(gx_tables, W / 4u);
+	uint K = W % 4u;
+	return GlyphuxWord(K == 0u ? V.x : (K == 1u ? V.y : (K == 2u ? V.z : V.w)));
+}
+
+float4 GlyphuxShadeColor(Texture2D ColorPages, SamplerState ColorPagesSampler, Texture2D Tables, float2 Q, int Glyph, float Pages, float PixelsPerUnit)
+{
+	uint Record = (uint)Glyph * 4u;
+	uint4 Bases = GlyphuxWords(GlyphuxTable(Tables, Record));
+	ColorTables T;
+	T.tiles = Bases.x;
+	T.paints = Bases.y;
+	T.stops = Bases.z;
+	T.recipes = Bases.w;
+	float4 Config = GlyphuxTable(Tables, Record + 1u);
+	float4 Page = GlyphuxTable(Tables, Record + 2u);
+	ColorCell Cell = color_cell(Tables, T, Q, Config);
+	float4 S = 0.0;
+	if (Cell.tile.mode >= 2u)
+	{
+		uint Width, Height;
+		ColorPages.GetDimensions(Width, Height);
+		float PageHeight = (float)Height / Pages;
+		S = ColorPages.SampleLevel(ColorPagesSampler, float2(Cell.texel.x / Width, (Page.x * PageHeight + Cell.texel.y) / Height), 0.0);
+	}
+	// Premultiplied sRGB, scaled by the glyph's opacity; to straight linear.
+	float4 C = color_shade(Tables, T, Q, PixelsPerUnit, Cell, S, Config) * Page.y;
+	float3 Straight = C.rgb / max(C.a, 1e-6);
+	return float4(GlyphuxSrgbToLinear(Straight), C.a);
+}
+
+// A glyph's color at texture coordinates UV (and how fast they change on screen), straight
+// alpha. Pass GLYPHUX_PASS_ALL draws a monochrome glyph's shadow, glow, outline and fill at
+// once (text_pass keeps them all).
+float4 GlyphuxShadeAt(Texture2D Atlas, SamplerState AtlasSampler, Texture2D Records, Texture2D ColorPages, SamplerState ColorPagesSampler,
+	Texture2D Tables, float2 UV, float2 DuvDx, float2 DuvDy, int Glyph, int Pass, float PxRange, float Pages, float Time)
+{
+	if (Pass >= GLYPHUX_PASS_COLOR)
+	{
+		float Footprint = max(length(DuvDx), length(DuvDy));
+		return GlyphuxShadeColor(ColorPages, ColorPagesSampler, Tables, UV, Glyph, Pages, 1.0 / max(Footprint, 1e-12));
+	}
+	return GlyphuxShadeMono(Atlas, AtlasSampler, Records, UV, DuvDx, DuvDy, Glyph, Pass, PxRange, Pages, Time);
+}
+
+// What the text materials' Custom node returns (widgets and text components): the pixel's
+// color, straight alpha.
+float4 GlyphuxShade(Texture2D Atlas, SamplerState AtlasSampler, Texture2D Records, Texture2D ColorPages, SamplerState ColorPagesSampler,
+	Texture2D Tables, float2 UV, float2 Info, float PxRange, float Pages, float Time)
+{
+	int Glyph = (int)(Info.x + 0.5);
+	int Pass = (int)(Info.y + 0.5);
+	// Derivatives first, while every pixel of the quad runs the same code.
+	float2 DuvDx = ddx(UV);
+	float2 DuvDy = ddy(UV);
+	return GlyphuxShadeAt(Atlas, AtlasSampler, Records, ColorPages, ColorPagesSampler, Tables, UV, DuvDx, DuvDy, Glyph, Pass, PxRange, Pages, Time);
+}
+
+// Quads textures (GlyphuxDrawQuads, every quad of a text; GlyphuxSurfaceQuads, one per glyph,
+// built by UGlyphuxDrawData::GetSurfaceQuads): three texels each, GLYPHUX_SURFACE_QUADS_PER_ROW
+// per row: its top-left and top-right corners; its bottom-left corner, record and pass; its
+// texture coordinates (left, top, right, bottom). Layout units, y down.
+
+float4 GlyphuxSurfaceQuad(Texture2D SurfaceQuads, int Index, int K)
+{
+	return SurfaceQuads.Load(int3((Index % GLYPHUX_SURFACE_QUADS_PER_ROW) * 3 + K, Index / GLYPHUX_SURFACE_QUADS_PER_ROW, 0));
+}
+
+// What the world and glyph materials' Custom node returns: the color of quad Quad of
+// SurfaceQuads (a quads texture) at Local, from (0, 0) at its top-left corner to (1, 1) at
+// its bottom-right. A text component's vertex passes its corner; a sprite its texture
+// coordinates; a fragment of a glyph its own, in that square, so every piece shows its part
+// of the glyph.
+float4 GlyphuxShadeGlyph(Texture2D Atlas, SamplerState AtlasSampler, Texture2D Records, Texture2D ColorPages, SamplerState ColorPagesSampler,
+	Texture2D Tables, Texture2D SurfaceQuads, float2 Local, float Quad, float PxRange, float Pages, float Time)
+{
+	// Derivatives first, while every pixel of the quad runs the same code.
+	float2 DlocalDx = ddx(Local);
+	float2 DlocalDy = ddy(Local);
+	int Index = (int)(Quad + 0.5);
+	if (Quad < -0.5)
+	{
+		return 0.0;
+	}
+	float4 Info = GlyphuxSurfaceQuad(SurfaceQuads, Index, 1);
+	float4 Rect = GlyphuxSurfaceQuad(SurfaceQuads, Index, 2);
+	float2 Span = Rect.zw - Rect.xy;
+	float2 UV = Rect.xy + Local * Span;
+	float2 DuvDx = DlocalDx * Span;
+	float2 DuvDy = DlocalDy * Span;
+	return GlyphuxShadeAt(Atlas, AtlasSampler, Records, ColorPages, ColorPagesSampler, Tables, UV, DuvDx, DuvDy,
+		(int)(Info.z + 0.5), (int)(Info.w + 0.5), PxRange, Pages, Time);
+}
+
+// The grid over a text's surface quads (GlyphuxSurfaceGrid, GLYPHUX_TABLES_WIDTH texels per
+// row): texel 0 its origin, cell size and columns; texel 1 its rows; a texel per cell (where
+// its list starts, in floats, and how long it is); then the lists, quad indices.
+
+float GlyphuxGridFloat(Texture2D Grid, uint W)
+{
+	float4 V = GlyphuxTable(Grid, W / 4u);
+	uint K = W % 4u;
+	return K == 0u ? V.x : (K == 1u ? V.y : (K == 2u ? V.z : V.w));
+}
+
+#ifndef GLYPHUX_SURFACE_MAX_QUADS
+// The most quads one pixel of a surface draws (glyphs whose glow or shadow overlap).
+#define GLYPHUX_SURFACE_MAX_QUADS 12
+#endif
+
+// What the surface material's Custom node returns: the text at TextPos (layout units, y down;
+// any mesh, flat or curved, maps its texture coordinates there), straight alpha. Every glyph
+// whose quad holds the point is drawn, in order, over the ones before.
+float4 GlyphuxShadeSurface(Texture2D Atlas, SamplerState AtlasSampler, Texture2D Records, Texture2D ColorPages, SamplerState ColorPagesSampler,
+	Texture2D Tables, Texture2D SurfaceQuads, Texture2D SurfaceGrid, float2 TextPos, float PxRange, float Pages, float Time)
+{
+	// Derivatives first, while every pixel of the quad runs the same code.
+	float2 DposDx = ddx(TextPos);
+	float2 DposDy = ddy(TextPos);
+
+	float4 Head = GlyphuxTable(SurfaceGrid, 0u);
+	float4 Rows = GlyphuxTable(SurfaceGrid, 1u);
+	float2 Cell = floor((TextPos - Head.xy) / max(Head.z, 1e-6));
+	if (Cell.x < 0.0 || Cell.y < 0.0 || Cell.x >= Head.w || Cell.y >= Rows.x)
+	{
+		return 0.0;
+	}
+	float4 List = GlyphuxTable(SurfaceGrid, 2u + (uint)(Cell.y * Head.w + Cell.x));
+	uint Start = (uint)(List.x + 0.5);
+	uint Count = min((uint)(List.y + 0.5), (uint)GLYPHUX_SURFACE_MAX_QUADS);
+
+	// Premultiplied, drawn front over back as the quads come.
+	float4 Sum = 0.0;
+	for (uint I = 0u; I < Count; ++I)
+	{
+		int Index = (int)(GlyphuxGridFloat(SurfaceGrid, Start + I) + 0.5);
+		float4 A = GlyphuxSurfaceQuad(SurfaceQuads, Index, 0);
+		float4 B = GlyphuxSurfaceQuad(SurfaceQuads, Index, 1);
+		float4 Rect = GlyphuxSurfaceQuad(SurfaceQuads, Index, 2);
+		// Where the point is in the quad, its parallelogram's two edges from the top-left corner.
+		float2 E1 = A.zw - A.xy;
+		float2 E2 = B.xy - A.xy;
+		float Det = E1.x * E2.y - E2.x * E1.y;
+		if (abs(Det) < 1e-12)
+		{
+			continue;
+		}
+		float2x2 Inverse = float2x2(E2.y, -E2.x, -E1.y, E1.x) / Det;
+		float2 Local = mul(Inverse, TextPos - A.xy);
+		if (any(Local < 0.0) || any(Local > 1.0))
+		{
+			continue;
+		}
+		float2 Span = Rect.zw - Rect.xy;
+		float2 UV = Rect.xy + Local * Span;
+		float2 DuvDx = mul(Inverse, DposDx) * Span;
+		float2 DuvDy = mul(Inverse, DposDy) * Span;
+		float4 C = GlyphuxShadeAt(Atlas, AtlasSampler, Records, ColorPages, ColorPagesSampler, Tables, UV, DuvDx, DuvDy,
+			(int)(B.z + 0.5), (int)(B.w + 0.5), PxRange, Pages, Time);
+		Sum = float4(C.rgb * C.a, C.a) + Sum * (1.0 - C.a);
+	}
+	return float4(Sum.rgb / max(Sum.a, 1e-6), Sum.a);
+}
+
+#endif // GLYPHUX_MATERIAL

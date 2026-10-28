@@ -56,6 +56,10 @@ The generator supports true SDF, pseudo-SDF, **multi-channel SDF (MSDF)** and
       <td><a href="examples/godot/addons/glyphux"><code>glyphux-godot</code></a></td>
       <td>A Godot 4.6 addon: <code>GlyphuxLabel</code>, <code>GlyphuxRichLabel</code> (BBCode) and <code>GlyphuxLabel3D</code> nodes, generated on Godot's own <code>RenderingDevice</code>. It lives in the demo project's <code>addons/glyphux</code>; its <code>build.py</code> builds the library into it.</td>
     </tr>
+    <tr>
+      <td><a href="examples/unreal/Plugins/Glyphux"><code>glyphux-unreal</code></a></td>
+      <td>An Unreal Engine 5.8 plugin: a UMG widget, a scene component, text on any mesh and text as Niagara particles, generated in Unreal's render graph. Its classes are written in Rust with <a href="https://github.com/Azazel-Labs/rivet">Rivet</a>, which generates their C++; the module's build runs cargo and links the Rust as a static library.</td>
+    </tr>
   </tbody>
 </table>
 
@@ -352,9 +356,11 @@ errors and writes the results into the atlas. Its output matches the CPU's to ab
 at resolutions suited to the displayed text size; `TextRenderer` draws them.
 [glyphux-gpu](crates/glyphux-gpu/README.md) holds everything independent of the graphics
 API; backends run it: [glyphux-wgpu](crates/glyphux-wgpu/README.md) (used by the
-[web demo](examples/web-demo)) and the [Godot addon](examples/godot/addons/glyphux), which adds
+[web demo](examples/web-demo)), the [Godot addon](examples/godot/addons/glyphux), which adds
 `GlyphuxLabel`, `GlyphuxRichLabel` and `GlyphuxLabel3D` nodes to Godot 4.6
-([demo project](examples/godot)).
+([demo project](examples/godot)), and the [Unreal plugin](examples/unreal/Plugins/Glyphux),
+which adds a widget, a component, a surface material and Niagara particles to Unreal Engine
+5.8 ([demo project](examples/unreal)).
 
 ```
 cargo run --release --bin text_demo -- examples/web-demo/assets/Inter-Regular.otf

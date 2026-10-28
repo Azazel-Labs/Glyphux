@@ -10,12 +10,15 @@
 //!
 //! * `glyphux-wgpu`: wgpu (native and WebGPU), with text and color renderers.
 //! * `glyphux-godot`: Godot 4's own `RenderingDevice`, as a GDExtension.
+//! * `glyphux-unreal`: Unreal Engine 5's render graph, as a plugin.
 
 pub mod atlas;
 pub mod color_atlas;
 pub mod field;
 #[cfg(feature = "glsl")]
 pub mod glsl;
+#[cfg(feature = "hlsl")]
+pub mod hlsl;
 #[cfg(feature = "shaping")]
 pub mod paragraph;
 #[cfg(feature = "shaping")]

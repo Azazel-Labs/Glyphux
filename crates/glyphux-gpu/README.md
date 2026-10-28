@@ -12,6 +12,7 @@ A backend owns the device objects and runs what this crate prepares:
 |---|---|
 | [`glyphux-wgpu`](../glyphux-wgpu) | wgpu: native (Vulkan, Metal, DX12, GL) and WebGPU. Adds the atlas texture, text and color glyph renderers, and a GPU profiler. Start here for a Rust application. |
 | [`glyphux-godot`](../../examples/godot/addons/glyphux) | A Godot 4.6 addon: `GlyphuxLabel`, `GlyphuxRichLabel` and `GlyphuxLabel3D` nodes. |
+| [`glyphux-unreal`](../../examples/unreal/Plugins/Glyphux) | An Unreal Engine 5.8 plugin, generating in the render graph (RDG): a UMG widget, a scene component, a surface material and Niagara particles. |
 
 The [workspace README](../../README.md#how-it-works) explains the method; glyphux-wgpu's
 README covers the [atlas, layout and rendering](../glyphux-wgpu/README.md#usage) and the
@@ -74,7 +75,12 @@ keeps only its bindings and texture reads, and calls the same functions:
 
 The `glsl` feature translates both cores to GLSL with naga ([`glsl`](src/glsl.rs)), which
 Godot's shading language takes as it is (Godot's addon writes them into shader include files
-when it is built). [`color_atlas`](src/color_atlas.rs) allocates
+when it is built). The `hlsl` feature translates the kernels and both cores to HLSL
+([`hlsl`](src/hlsl.rs)): `hlsl::kernel` gives a kernel's source (entry point `main`, no
+register assignments, for an engine that binds by name) with its bindings, and
+`hlsl::color_library_with` threads a texture parameter through the color core's table reads,
+for material systems whose functions cannot reach globals. Unreal's plugin writes them into
+its shader directory when it is built. [`color_atlas`](src/color_atlas.rs) allocates
 rectangles on color glyph pages, and `split_runs` picks a font per character for font
 fallback.
 

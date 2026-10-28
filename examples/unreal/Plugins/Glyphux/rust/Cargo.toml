@@ -1,0 +1,41 @@
+[package]
+name = "glyphux-unreal"
+version = "0.4.1"
+edition = "2024"
+rust-version = "1.94"
+publish = false
+license = "MIT"
+repository = "https://github.com/Azazel-Labs/Glyphux"
+description = "The Rust half of the Glyphux Unreal Engine plugin: text layout, the glyph atlas and its GPU batches, glyph records for the materials"
+
+[lib]
+# The plugin's module (Source/Glyphux) links the static library.
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+glyphux-gpu = { path = "../../../../../crates/glyphux-gpu" }
+# Rivet (UCLASSes in Rust), cloned next to the Glyphux repository.
+rivet = { path = "../../../../../../rivet/rivet" }
+
+[build-dependencies]
+glyphux-gpu = { path = "../../../../../crates/glyphux-gpu", default-features = false, features = ["hlsl"] }
+rivet-build = { path = "../../../../../../rivet/rivet-build" }
+
+# Its own workspace (the Glyphux workspace excludes it).
+[workspace]
+
+# What the plugin's Build.cs builds: optimized, with unwinding, so that a panic in Rust is
+# caught at the boundary and logged instead of taking the editor down.
+[profile.unreal]
+inherits = "release"
+panic = "unwind"
+codegen-units = 1
+lto = "thin"
+debug = "line-tables-only"
+
+[lints.rust]
+rust_2018_idioms = { level = "warn", priority = -1 }
+unused_qualifications = "warn"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }

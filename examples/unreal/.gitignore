@@ -1,0 +1,11 @@
+# Unreal's build and editor output.
+Binaries/
+Intermediate/
+Saved/
+DerivedDataCache/
+.vs/
+.idea/
+*.sln
+*.code-workspace
+Plugins/*/Binaries/
+Plugins/*/Intermediate/
