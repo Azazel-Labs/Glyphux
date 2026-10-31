@@ -24,13 +24,15 @@ monolithic builds alike.
 
 1. Install [rustup](https://rustup.rs), once. The first build installs the rest: the Rust
    toolchain the crate pins (`rust/rust-toolchain.toml`), the one target the build needs,
-   and the crates, Ferreal among them, from
-   [its repository](https://github.com/Azazel-Labs/Ferreal) (the version in
-   `rust/Cargo.lock`; `cargo update -p ferreal` in `rust/` moves to the newest).
-
+   and the crates. Ferreal and glyphux-gpu come from their repositories
+   ([Ferreal](https://github.com/Azazel-Labs/Ferreal), [Glyphux](https://github.com/Azazel-Labs/Glyphux)),
+   at the commits `rust/Cargo.toml` pins, until they are released with what the plugin
+   needs.
 2. Copy `Plugins/Glyphux` into your project's `Plugins` folder, or open the demo project
-   (`examples/unreal/GlyphuxDemo.uproject`), which has it. If you copy it elsewhere, fix the
-   path of the glyphux-gpu dependency in `rust/Cargo.toml`.
+   (`examples/unreal/GlyphuxDemo.uproject`), which has it. The plugin is self-contained:
+   it needs no other plugin, and in a copy, cargo fetches glyphux-gpu from the pinned commit.
+   Inside this repository, `examples/unreal/.cargo/config.toml` builds it against the
+   glyphux-gpu beside it instead.
 3. Build the project (from your IDE, or by opening the .uproject and letting Unreal build
    it). `Source/Glyphux/Glyphux.Build.cs` runs `cargo build`, which also writes the
    generated C++ and shaders; the first build compiles the Rust dependencies and takes a
@@ -41,9 +43,11 @@ monolithic builds alike.
    materials, and for shattering text, `Content/Python/glyphux_shards.py`. MATERIALS.md
    says what they make, to build the materials by hand instead.
 
-To call engine classes from the plugin's Rust with `ferreal::engine!` (typed bindings
-generated from Unreal's reflection data), also copy the `unreal/Ferreal` plugin of [Ferreal's repository](https://github.com/Azazel-Labs/Ferreal) into the
-project's `Plugins`; the plugin does not need it as it is.
+The crate's build also writes Ferreal's exporter, `Source/GlyphuxExporter`: an Unreal Build
+Tool plugin that exports the engine's reflection data, from which `ferreal::engine!` makes
+typed bindings to engine classes. It is committed, since Unreal Build Tool sets its plugins up
+before any Build.cs runs. If a build adds engine classes the Rust names for the first time,
+the exporter builds the Rust again once the data is exported, later in the same build.
 
 Set `FERREAL_SKIP_CARGO=1` in the environment to link the library already built (in
 `rust/target/unreal`) without running cargo: for build machines without Rust, with the

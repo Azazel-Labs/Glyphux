@@ -7,6 +7,9 @@
 
 #include "CoreMinimal.h"
 #include "UObject/Object.h"
+#include "UObject/Class.h"
+#include "Misc/DateTime.h"
+#include "Misc/Timespan.h"
 #include "Templates/Casts.h"
 
 static_assert(sizeof(TCHAR) == 2, "Ferreal passes FString characters to Rust as UTF-16");
@@ -65,6 +68,60 @@ namespace Ferreal
 		double Pitch, Yaw, Roll;
 	};
 
+	struct FQuat4
+	{
+		double X, Y, Z, W;
+	};
+
+	struct FXform
+	{
+		FQuat4 Rotation;
+		FVec3 Translation;
+		FVec3 Scale;
+	};
+
+	// Core types Unreal Header Tool is told about apart from their C++ (NoExport), copied
+	// through their public members.
+
+	struct FVec4
+	{
+		double X, Y, Z, W;
+	};
+
+	struct FInt2
+	{
+		int32 X, Y;
+	};
+
+	struct FInt3
+	{
+		int32 X, Y, Z;
+	};
+
+	/** RGBA, whatever order FColor keeps its bytes in on the platform. */
+	struct FColor8
+	{
+		uint8 R, G, B, A;
+	};
+
+	struct FBox3
+	{
+		FVec3 Min;
+		FVec3 Max;
+		bool IsValid;
+	};
+
+	struct FMat4
+	{
+		double M[4][4];
+	};
+
+	/** FDateTime, FTimespan: ticks of 100 nanoseconds. */
+	struct FTicks
+	{
+		int64 Ticks;
+	};
+
 	inline FStr16 ToStr16(const FString& S)
 	{
 		return FStr16{reinterpret_cast<const uint16*>(*S), static_cast<size_t>(S.Len())};
@@ -81,12 +138,18 @@ namespace Ferreal
 		return Out;
 	}
 
-	/** Keeps a string returned to Rust until the next one this thread returns. */
+	/**
+	 * Keeps a string returned to Rust, which copies it at once: in a ring of slots, so the
+	 * strings of a struct returned whole are all alive when Rust reads them.
+	 */
 	inline FStr16 KeepString(FString S)
 	{
-		static thread_local FString Kept;
-		Kept = MoveTemp(S);
-		return ToStr16(Kept);
+		static thread_local FString Kept[256];
+		static thread_local int32 Next = 0;
+		FString& Slot = Kept[Next];
+		Next = (Next + 1) % 256;
+		Slot = MoveTemp(S);
+		return ToStr16(Slot);
 	}
 
 	inline FColor4 ToColor4(const FLinearColor& C) { return FColor4{C.R, C.G, C.B, C.A}; }
@@ -97,6 +160,60 @@ namespace Ferreal
 	inline FVector FromVec3(FVec3 V) { return FVector(V.X, V.Y, V.Z); }
 	inline FRot ToRot(const FRotator& R) { return FRot{R.Pitch, R.Yaw, R.Roll}; }
 	inline FRotator FromRot(FRot R) { return FRotator(R.Pitch, R.Yaw, R.Roll); }
+	inline FQuat4 ToQuat(const FQuat& Q) { return FQuat4{Q.X, Q.Y, Q.Z, Q.W}; }
+	inline FQuat FromQuat(FQuat4 Q) { return FQuat(Q.X, Q.Y, Q.Z, Q.W); }
+	inline FXform ToXform(const FTransform& T)
+	{
+		return FXform{ToQuat(T.GetRotation()), ToVec3(T.GetTranslation()), ToVec3(T.GetScale3D())};
+	}
+	inline FTransform FromXform(const FXform& X)
+	{
+		return FTransform(FromQuat(X.Rotation), FromVec3(X.Translation), FromVec3(X.Scale));
+	}
+
+	inline FVec4 ToVec4(const FVector4& V) { return FVec4{V.X, V.Y, V.Z, V.W}; }
+	inline FVector4 FromVec4(FVec4 V) { return FVector4(V.X, V.Y, V.Z, V.W); }
+	inline FInt2 ToInt2(const FIntPoint& P) { return FInt2{P.X, P.Y}; }
+	inline FIntPoint FromInt2(FInt2 P) { return FIntPoint(P.X, P.Y); }
+	inline FInt3 ToInt3(const FIntVector& V) { return FInt3{V.X, V.Y, V.Z}; }
+	inline FIntVector FromInt3(FInt3 V) { return FIntVector(V.X, V.Y, V.Z); }
+	inline FColor8 ToColor8(const FColor& C) { return FColor8{C.R, C.G, C.B, C.A}; }
+	inline FColor FromColor8(FColor8 C) { return FColor(C.R, C.G, C.B, C.A); }
+	inline FBox3 ToBox3(const FBox& B) { return FBox3{ToVec3(B.Min), ToVec3(B.Max), B.IsValid != 0}; }
+	inline FBox FromBox3(const FBox3& B)
+	{
+		FBox Out(FromVec3(B.Min), FromVec3(B.Max));
+		Out.IsValid = B.IsValid ? 1 : 0;
+		return Out;
+	}
+	inline FMat4 ToMat4(const FMatrix& M)
+	{
+		FMat4 Out;
+		for (int32 R = 0; R < 4; ++R)
+		{
+			for (int32 C = 0; C < 4; ++C)
+			{
+				Out.M[R][C] = M.M[R][C];
+			}
+		}
+		return Out;
+	}
+	inline FMatrix FromMat4(const FMat4& M)
+	{
+		FMatrix Out;
+		for (int32 R = 0; R < 4; ++R)
+		{
+			for (int32 C = 0; C < 4; ++C)
+			{
+				Out.M[R][C] = M.M[R][C];
+			}
+		}
+		return Out;
+	}
+	inline FTicks ToTicks(const FDateTime& D) { return FTicks{D.GetTicks()}; }
+	inline FTicks ToTicks(const FTimespan& T) { return FTicks{T.GetTicks()}; }
+	inline FDateTime FromDateTicks(FTicks T) { return FDateTime(T.Ticks); }
+	inline FTimespan FromSpanTicks(FTicks T) { return FTimespan(T.Ticks); }
 
 	inline void* ToObj(const UObject* P) { return const_cast<UObject*>(P); }
 
@@ -110,6 +227,27 @@ namespace Ferreal
 	T* FromObj(void* P)
 	{
 		return Cast<T>(static_cast<UObject*>(P));
+	}
+
+	/**
+	 * An object Rust passed, as a T if it is one, checked against the class found by its path:
+	 * a struct's fields may be of classes from modules this one does not link, whose
+	 * StaticClass (which Cast needs) it cannot call.
+	 */
+	template <typename T>
+	T* FromObjOf(void* P, const TCHAR* ClassPath)
+	{
+		UObject* O = static_cast<UObject*>(P);
+		if (O == nullptr)
+		{
+			return nullptr;
+		}
+		static UClass* Class = nullptr;
+		if (Class == nullptr)
+		{
+			Class = FindObject<UClass>(nullptr, ClassPath);
+		}
+		return Class != nullptr && O->IsA(Class) ? static_cast<T*>(O) : nullptr;
 	}
 
 	/** An object array passed to Rust: alive until the end of the full expression (the call). */
@@ -168,6 +306,37 @@ namespace Ferreal
 	TSlice<T> ToSlice(TConstArrayView<T> A)
 	{
 		return TSlice<T>{A.GetData(), static_cast<size_t>(A.Num())};
+	}
+
+	/** Where Rust receives an array's elements (ferreal::ffi::Sink): each pushed carrier is copied at once. */
+	struct FSink
+	{
+		void* Ctx;
+		void (*Push)(void*, const void*);
+	};
+
+	/** Hands each element of Array to Rust, as the carrier ToCarrier makes of it. */
+	template <typename A, typename F>
+	void PushAll(const FSink& Sink, const A& Array, F ToCarrier)
+	{
+		for (const auto& E : Array)
+		{
+			const auto C = ToCarrier(E);
+			Sink.Push(Sink.Ctx, &C);
+		}
+	}
+
+	/** An array from Rust, each carrier made a T by FromCarrier. */
+	template <typename T, typename C, typename F>
+	TArray<T> ArrayFrom(TSlice<C> S, F FromCarrier)
+	{
+		TArray<T> Out;
+		Out.Reserve(static_cast<int32>(S.Len));
+		for (size_t I = 0; I < S.Len; ++I)
+		{
+			Out.Add(FromCarrier(S.Ptr[I]));
+		}
+		return Out;
 	}
 
 	/** An array from Rust, copied. */

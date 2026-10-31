@@ -13,14 +13,17 @@ description = "The Rust half of the Glyphux Unreal Engine plugin: text layout, t
 crate-type = ["staticlib", "rlib"]
 
 [dependencies]
-glyphux-gpu = { path = "../../../../../crates/glyphux-gpu" }
-# Ferreal (UCLASSes in Rust), from its repository until it is published: the latest of its
-# main branch when Cargo.lock was written (`cargo update -p ferreal` moves to the newest).
-ferreal = { git = "https://github.com/Azazel-Labs/Ferreal" }
+# glyphux-gpu from Glyphux's repository, pinned to a commit with the HLSL output (not yet in a
+# release), so the plugin builds wherever it is copied. Inside the repository,
+# examples/unreal/.cargo/config.toml patches it to the crate beside it. Move both pins together.
+glyphux-gpu = { git = "https://github.com/Azazel-Labs/Glyphux", rev = "97035d6442e17a7dda375b329f3df71fa2730458" }
+# Ferreal (UCLASSes in Rust), from its repository until it is published, pinned to a commit
+# of its main branch (move both this and ferreal-build below together).
+ferreal = { git = "https://github.com/Azazel-Labs/Ferreal", rev = "210fcee5aa815598a8d6c4afe199be9e1d194160" }
 
 [build-dependencies]
-glyphux-gpu = { path = "../../../../../crates/glyphux-gpu", default-features = false, features = ["hlsl"] }
-ferreal-build = { git = "https://github.com/Azazel-Labs/Ferreal" }
+glyphux-gpu = { git = "https://github.com/Azazel-Labs/Glyphux", rev = "97035d6442e17a7dda375b329f3df71fa2730458", default-features = false, features = ["hlsl"] }
+ferreal-build = { git = "https://github.com/Azazel-Labs/Ferreal", rev = "210fcee5aa815598a8d6c4afe199be9e1d194160" }
 
 # Its own workspace (the Glyphux workspace excludes it).
 [workspace]

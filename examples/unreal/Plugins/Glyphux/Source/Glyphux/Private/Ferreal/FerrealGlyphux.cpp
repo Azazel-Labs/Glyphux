@@ -16,6 +16,7 @@ namespace Ferreal::Glyphux::Detail
 	struct FModuleTable
 	{
 		void (*Log)(uint8 Level, Ferreal::FStr8 Message);
+		void* (*FindClass)(Ferreal::FStr8 Name);
 	};
 
 	struct FTable_GlyphuxTextComponent
@@ -189,6 +190,11 @@ namespace Ferreal::Glyphux::Detail
 		case 1: UE_LOG(LogFerrealGlyphux, Warning, TEXT("%s"), *Text); break;
 		default: UE_LOG(LogFerrealGlyphux, Error, TEXT("%s"), *Text); break;
 		}
+	}
+
+	static void* FindClass(Ferreal::FStr8 Name)
+	{
+		return Ferreal::ToObj(FindFirstObject<UClass>(*Ferreal::ToFString(Name), EFindFirstObjectOptions::NativeFirst));
 	}
 
 	static Ferreal::FStr16 Get_GlyphuxTextComponent_Text(void* Object)
@@ -756,7 +762,7 @@ void Ferreal::Glyphux::Register()
 {
 	static const bool bRegistered = []
 	{
-		static const Detail::FModuleTable ModuleTable = {&Detail::Log};
+		static const Detail::FModuleTable ModuleTable = {&Detail::Log, &Detail::FindClass};
 		ferreal_Glyphux_init(&ModuleTable);
 		ferreal_Glyphux_GlyphuxTextComponent_register(&Detail::Table_GlyphuxTextComponent);
 		ferreal_Glyphux_GlyphuxTextBlock_register(&Detail::Table_GlyphuxTextBlock);

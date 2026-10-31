@@ -1,0 +1,6 @@
+// Written by ferreal-build: the modules of the engine classes, structs and enums
+// the crate uses, which the module's Build.cs depends on.
+CoreUObject
+Engine
+ProceduralMeshComponent
+UMG

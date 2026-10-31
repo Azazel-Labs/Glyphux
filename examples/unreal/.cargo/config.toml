@@ -1,0 +1,5 @@
+# Inside the Glyphux repository, the plugin's crate builds against the glyphux-gpu beside it
+# rather than the commit its Cargo.toml pins (which a copy of the plugin elsewhere fetches).
+# Cargo finds this file from the crate's folder, where Glyphux.Build.cs runs it.
+[patch."https://github.com/Azazel-Labs/Glyphux"]
+glyphux-gpu = { path = "../../crates/glyphux-gpu" }

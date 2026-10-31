@@ -9,3 +9,5 @@ DerivedDataCache/
 *.code-workspace
 Plugins/*/Binaries/
 Plugins/*/Intermediate/
+# What .NET builds of the plugins' Unreal Build Tool plugins (Ferreal's exporter).
+Plugins/*/Source/*/obj/

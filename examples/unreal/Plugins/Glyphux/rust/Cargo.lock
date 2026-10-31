@@ -91,7 +91,7 @@ checksum = "00d174d5400e5e8fd687ad1049e2f578285fa914201b1af7e8b112a4546bd826"
 [[package]]
 name = "ferreal"
 version = "0.1.0"
-source = "git+https://github.com/Azazel-Labs/Ferreal#5c61d375f57f9e80d176fe542eb006c90c7f469f"
+source = "git+https://github.com/Azazel-Labs/Ferreal?rev=210fcee5aa815598a8d6c4afe199be9e1d194160#210fcee5aa815598a8d6c4afe199be9e1d194160"
 dependencies = [
  "ferreal-macros",
 ]
@@ -99,7 +99,7 @@ dependencies = [
 [[package]]
 name = "ferreal-build"
 version = "0.1.0"
-source = "git+https://github.com/Azazel-Labs/Ferreal#5c61d375f57f9e80d176fe542eb006c90c7f469f"
+source = "git+https://github.com/Azazel-Labs/Ferreal?rev=210fcee5aa815598a8d6c4afe199be9e1d194160#210fcee5aa815598a8d6c4afe199be9e1d194160"
 dependencies = [
  "ferreal-model",
  "proc-macro2",
@@ -112,7 +112,7 @@ dependencies = [
 [[package]]
 name = "ferreal-macros"
 version = "0.1.0"
-source = "git+https://github.com/Azazel-Labs/Ferreal#5c61d375f57f9e80d176fe542eb006c90c7f469f"
+source = "git+https://github.com/Azazel-Labs/Ferreal?rev=210fcee5aa815598a8d6c4afe199be9e1d194160#210fcee5aa815598a8d6c4afe199be9e1d194160"
 dependencies = [
  "ferreal-model",
  "proc-macro2",
@@ -123,7 +123,7 @@ dependencies = [
 [[package]]
 name = "ferreal-model"
 version = "0.1.0"
-source = "git+https://github.com/Azazel-Labs/Ferreal#5c61d375f57f9e80d176fe542eb006c90c7f469f"
+source = "git+https://github.com/Azazel-Labs/Ferreal?rev=210fcee5aa815598a8d6c4afe199be9e1d194160#210fcee5aa815598a8d6c4afe199be9e1d194160"
 dependencies = [
  "proc-macro2",
  "quote",
