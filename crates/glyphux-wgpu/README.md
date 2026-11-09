@@ -418,4 +418,7 @@ llvmpipe a batch of ~100 glyphs at 32 px takes about as long as one CPU core.
 
 * The in-shader overlap combiner handles up to 64 contours per glyph. Glyphs with more are
   generated without overlap support, which is fine unless their contours overlap.
-* WebGL 2 is not supported (no compute shaders); WebGPU only on the web.
+* WebGL 2 has no compute shaders, so the generator can't run there. An atlas configured
+  with `generator: Generator::Cpu` generates its fields on the CPU and uploads them instead
+  (`GlyphAtlas::flush` does either). Color glyphs read storage buffers when drawn and still
+  need WebGPU on the web.

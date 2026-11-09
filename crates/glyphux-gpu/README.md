@@ -59,6 +59,24 @@ when it is built and load them at run time. Godot's addon does: its build script
 them, its library embeds them and creates its compute pipelines from them. On Vulkan and
 Direct3D 12 its fields are identical to wgpu's.
 
+## Without compute shaders
+
+A device without compute shaders (WebGL 2, older GLES) can't run the kernels. An atlas
+configured with `generator: Generator::Cpu` generates the fields with glyphux's CPU
+generator instead, on the same worker threads that prepare glyphs (or, without threads, when
+they are collected). The backend then:
+
+1. Calls `atlas.take_fields()` (in place of `take_batch`, which returns `None` for such an
+   atlas). This waits for the frame's fields and returns an `AtlasField` per glyph: its
+   layer, rectangle and texels in the atlas format, rows top to bottom with no padding.
+2. Grows its texture array to `atlas.page_count()` pages, as for a batch.
+3. Uploads each field's texels into its rectangle.
+
+The texels are what the store pass writes for the same glyphs (glyphux-wgpu's tests compare
+both generators' pages for a whole font), so the drawing code is the same either way. The
+texture needs no storage usage. Generating on the CPU costs far more time per glyph than a
+batch, so this suits text that changes rarely; the atlas keeps each glyph once generated.
+
 ## Drawing
 
 The draw shaders are split the same way: `text::TEXT_CORE` and `glyphux::color::COLOR_CORE`

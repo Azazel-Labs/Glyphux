@@ -11,9 +11,14 @@
 //! * `glyphux-wgpu`: wgpu (native and WebGPU), with text and color renderers.
 //! * `glyphux-godot`: Godot 4's own `RenderingDevice`, as a GDExtension.
 //! * `glyphux-unreal`: Unreal Engine 5's render graph, as a plugin.
+//!
+//! A device without compute shaders (WebGL 2) can use an atlas with [`Generator::Cpu`]: the
+//! workers generate the fields with glyphux's CPU generator, and
+//! [`GlyphAtlas::take_fields`] returns their texels for the backend to upload.
 
 pub mod atlas;
 pub mod color_atlas;
+mod cpu;
 pub mod field;
 #[cfg(feature = "glsl")]
 pub mod glsl;
@@ -28,7 +33,9 @@ pub mod text;
 pub mod units;
 mod workers;
 
-pub use atlas::{AtlasConfig, AtlasConfigError, AtlasFormat, AtlasGlyph, AtlasStats, GlyphAtlas, GlyphKey};
+pub use atlas::{
+    AtlasConfig, AtlasConfigError, AtlasField, AtlasFormat, AtlasGlyph, AtlasStats, Generator, GlyphAtlas, GlyphKey,
+};
 pub use field::{Batch, Binding, FieldJob, FieldLayout, Kernel, PreparedJob, TILE, pack, prepare_job, shader_source};
 pub use glyphux;
 pub use glyphux::gpu::{FieldKind, GpuShape};

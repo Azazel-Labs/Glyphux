@@ -7,6 +7,8 @@
 //! results, doing any job no worker has started yet itself, so every glyph requested in a
 //! frame is generated in that frame. Detail probes share the workers at lower priority; their
 //! results may arrive in later frames. Without threads (`wasm32`), everything runs in `take_batch`.
+//! With [`crate::atlas::Generator::Cpu`] the workers also generate the fields, and
+//! [`crate::GlyphAtlas::take_fields`] collects them.
 
 use std::collections::VecDeque;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -15,7 +17,7 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use glyphux::gpu::GpuShape;
 use glyphux::{PreparedShape, Shape, Transform};
 
-use crate::atlas::{AtlasConfig, GlyphKey, probe_detail};
+use crate::atlas::{AtlasConfig, Generator, GlyphKey, probe_detail};
 use crate::field::{FieldJob, PreparedJob, prepare_job_owned};
 
 /// One glyph to prepare.
@@ -32,9 +34,16 @@ pub(crate) struct PrepJob {
     pub probe: Option<GlyphKey>,
 }
 
+/// A prepared glyph: a job for the GPU generator, or the CPU generator's finished field.
+pub(crate) enum Prepared {
+    Job(Box<PreparedJob>),
+    /// Texels in the atlas format, as [`crate::atlas::AtlasField::texels`].
+    Texels(Vec<u8>),
+}
+
 pub(crate) enum Done {
     /// `None` when the outline turned out empty.
-    Prep(u64, Option<Box<PreparedJob>>),
+    Prep(u64, Option<Prepared>),
     Probe(GlyphKey, u32),
 }
 
@@ -93,31 +102,45 @@ fn run_prep(job: PrepJob, shared: &Shared) {
     shared.done_wake.notify_all();
 }
 
-fn prepare(job: PrepJob, shared: &Shared) -> Option<Box<PreparedJob>> {
+fn prepare(mut job: PrepJob, shared: &Shared) -> Option<Prepared> {
     let cfg = &shared.config;
-    prepare_shape(job.shape, cfg).map(|shape| {
+    prepare_shape(std::mem::take(&mut job.shape), cfg).map(|shape| {
         let prepared = PreparedShape::new(&shape);
-        let gpu = GpuShape::new(&prepared);
-        let field_job = FieldJob {
-            shape: &prepared,
-            gpu: &gpu,
-            transform: job.transform,
-            width: job.width,
-            height: job.height,
-            kind: cfg.kind,
-            overlap: cfg.overlap_support,
-            error_correction: cfg.error_correction,
-            atlas_origin: job.origin,
-            band: if cfg.narrow_band { 0.5 * job.px_range + 2.0 } else { 0.0 },
-            sign_correction: cfg.sign_correction,
+        let result = match cfg.generator {
+            Generator::Gpu => Prepared::Job(Box::new(prepare_gpu_job(&prepared, &job, cfg))),
+            Generator::Cpu => Prepared::Texels(crate::cpu::generate_texels(
+                &prepared,
+                &job.transform,
+                job.width,
+                job.height,
+                cfg,
+            )),
         };
-        let result = prepare_job_owned(&field_job, gpu.clone());
         if let Some(key) = job.probe {
             lock(&shared.queues).probe.push_back((key, shape));
             shared.wake.notify_one();
         }
-        Box::new(result)
+        result
     })
+}
+
+/// Bins the prepared shape's edges into tiles for the GPU kernels.
+fn prepare_gpu_job(prepared: &PreparedShape, job: &PrepJob, cfg: &AtlasConfig) -> PreparedJob {
+    let gpu = GpuShape::new(prepared);
+    let field_job = FieldJob {
+        shape: prepared,
+        gpu: &gpu,
+        transform: job.transform,
+        width: job.width,
+        height: job.height,
+        kind: cfg.kind,
+        overlap: cfg.overlap_support,
+        error_correction: cfg.error_correction,
+        atlas_origin: job.origin,
+        band: if cfg.narrow_band { 0.5 * job.px_range + 2.0 } else { 0.0 },
+        sign_correction: cfg.sign_correction,
+    };
+    prepare_job_owned(&field_job, gpu.clone())
 }
 
 /// Probes a glyph's detail; a probe that panics is dropped (the glyph keeps its size level).

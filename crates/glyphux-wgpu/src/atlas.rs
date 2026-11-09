@@ -1,5 +1,6 @@
 //! The glyph atlas on a wgpu device: [`glyphux_gpu::GlyphAtlas`]'s cache with its texture
-//! array, which the field kernels and the store pass fill.
+//! array, which the field kernels and the store pass fill (or, with [`Generator::Cpu`], uploads
+//! of the fields generated on the CPU, on devices without compute shaders such as WebGL 2).
 //!
 //! [`GlyphAtlas`] dereferences to the cache, so requests (`get`, `get_with_reach`,
 //! `begin_frame`, the layout functions of [`crate::text`]) work on it directly; [`GlyphAtlas::flush`]
@@ -10,8 +11,10 @@
 use std::ops::{Deref, DerefMut};
 
 pub use glyphux_gpu::atlas::{
-    AtlasConfig, AtlasConfigError, AtlasFormat, AtlasGlyph, AtlasStats, GlyphKey, store_shader_source,
+    AtlasConfig, AtlasConfigError, AtlasField, AtlasFormat, AtlasGlyph, AtlasStats, Generator, GlyphKey,
+    store_shader_source,
 };
+use wgpu::util::DeviceExt;
 
 use crate::field::{Binding, FieldBatch, FieldGenerator, Kernel, bind_group_layout, pipeline};
 
@@ -25,13 +28,19 @@ pub fn texture_format(format: AtlasFormat) -> wgpu::TextureFormat {
 }
 
 /// Checks that `config` works on `device`: its own values, the format (32-bit floats must be
-/// filterable) and the texture size.
+/// filterable), the texture size, and compute shaders for [`Generator::Gpu`].
 pub fn validate(config: &AtlasConfig, device: &wgpu::Device) -> Result<(), AtlasConfigError> {
     config.validate()?;
     if config.format == AtlasFormat::Rgba32Float && !device.features().contains(wgpu::Features::FLOAT32_FILTERABLE) {
         return Err(AtlasConfigError::Format(config.format));
     }
     let limits = device.limits();
+    // WebGL 2 devices (wgpu's downlevel WebGL 2 limits) have no compute workgroups at all.
+    if config.generator == Generator::Gpu && limits.max_compute_invocations_per_workgroup == 0 {
+        return Err(AtlasConfigError::Invalid(
+            "the device has no compute shaders: use Generator::Cpu",
+        ));
+    }
     if config.size > limits.max_texture_dimension_2d || config.layers > limits.max_texture_array_layers {
         return Err(AtlasConfigError::TooLarge {
             size: config.size,
@@ -55,6 +64,11 @@ pub struct AtlasTexture {
     format: AtlasFormat,
     size: u32,
     texture_pages: u32,
+    /// The generator and store passes; `None` with [`Generator::Cpu`].
+    passes: Option<Passes>,
+}
+
+struct Passes {
     generator: FieldGenerator,
     store: wgpu::ComputePipeline,
     store_layout: wgpu::BindGroupLayout,
@@ -74,7 +88,14 @@ impl DerefMut for GlyphAtlas {
     }
 }
 
-fn atlas_texture(device: &wgpu::Device, format: AtlasFormat, size: u32, pages: u32) -> wgpu::Texture {
+/// A texture array for the atlas; the store pass writes it as a storage texture, uploads of
+/// CPU fields copy into it.
+fn atlas_texture(device: &wgpu::Device, format: AtlasFormat, size: u32, pages: u32, storage: bool) -> wgpu::Texture {
+    let storage = if storage {
+        wgpu::TextureUsages::STORAGE_BINDING
+    } else {
+        wgpu::TextureUsages::empty()
+    };
     device.create_texture(&wgpu::TextureDescriptor {
         label: Some("glyphux atlas"),
         size: wgpu::Extent3d {
@@ -86,7 +107,7 @@ fn atlas_texture(device: &wgpu::Device, format: AtlasFormat, size: u32, pages: u
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format: texture_format(format),
-        usage: wgpu::TextureUsages::STORAGE_BINDING
+        usage: storage
             | wgpu::TextureUsages::TEXTURE_BINDING
             | wgpu::TextureUsages::COPY_SRC
             | wgpu::TextureUsages::COPY_DST,
@@ -136,7 +157,8 @@ impl GlyphAtlas {
         self.gpu.view()
     }
 
-    /// Generates all queued glyphs into the atlas (one batch). Returns how many.
+    /// Generates all queued glyphs into the atlas (one batch, or with [`Generator::Cpu`] one
+    /// upload). Returns how many.
     ///
     /// The upload is recorded into `encoder`, in order with the passes, so a frame may flush
     /// any number of times before submitting.
@@ -157,26 +179,31 @@ impl GlyphAtlas {
 
 impl AtlasTexture {
     /// Creates pipelines and a tiny placeholder texture for an atlas of `config` (checked
-    /// against the device). Full pages are allocated by flush.
+    /// against the device). Full pages are allocated by flush. With [`Generator::Cpu`] there
+    /// are no pipelines, and the texture is not a storage texture.
     pub fn new(device: &wgpu::Device, config: &AtlasConfig) -> Result<Self, AtlasConfigError> {
         validate(config, device)?;
-        let texture = atlas_texture(device, config.format, 1, 1);
-        let view = array_view(&texture);
-        let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("glyphux atlas store"),
-            source: wgpu::ShaderSource::Wgsl(store_shader_source(config.format).into()),
+        let passes = (config.generator == Generator::Gpu).then(|| {
+            let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("glyphux atlas store"),
+                source: wgpu::ShaderSource::Wgsl(store_shader_source(config.format).into()),
+            });
+            let store_layout = bind_group_layout(device, Kernel::Store, Some(texture_format(config.format)));
+            Passes {
+                generator: FieldGenerator::new(device),
+                store: pipeline(device, &module, Kernel::Store, &store_layout),
+                store_layout,
+            }
         });
-        let store_layout = bind_group_layout(device, Kernel::Store, Some(texture_format(config.format)));
-        let store = pipeline(device, &module, Kernel::Store, &store_layout);
+        let texture = atlas_texture(device, config.format, 1, 1, passes.is_some());
+        let view = array_view(&texture);
         Ok(AtlasTexture {
             texture,
             view,
             format: config.format,
             size: config.size,
             texture_pages: 0,
-            generator: FieldGenerator::new(device),
-            store,
-            store_layout,
+            passes,
         })
     }
 
@@ -197,7 +224,8 @@ impl AtlasTexture {
     }
 
     /// Generates the glyphs queued in `atlas` (which must have this texture's configuration)
-    /// into the texture, in one batch. Returns how many.
+    /// into the texture, in one batch (or, with [`Generator::Cpu`], uploads the fields the CPU
+    /// generated). Returns how many.
     pub fn flush(
         &mut self,
         atlas: &mut glyphux_gpu::GlyphAtlas,
@@ -215,22 +243,88 @@ impl AtlasTexture {
         encoder: &mut wgpu::CommandEncoder,
         mut profiler: Option<&mut crate::profile::GpuProfiler>,
     ) -> usize {
+        if self.passes.is_none() {
+            let fields = atlas.take_fields();
+            if fields.is_empty() {
+                return 0;
+            }
+            self.grow_texture(device, encoder, atlas.page_count());
+            self.upload_fields(device, encoder, &fields);
+            return fields.len();
+        }
         let Some(batch) = atlas.take_batch() else {
             return 0;
         };
         self.grow_texture(device, encoder, atlas.page_count());
-        let uploaded = self.generator.upload_batch(device, encoder, &batch);
-        self.generator
+        let Some(passes) = &mut self.passes else {
+            return 0;
+        };
+        let uploaded = passes.generator.upload_batch(device, encoder, &batch);
+        passes
+            .generator
             .encode_profiled(encoder, &uploaded, profiler.as_deref_mut());
         self.encode_store(device, encoder, &uploaded, profiler);
         batch.layouts.len()
+    }
+
+    /// Copies CPU-generated fields into their rectangles, through one staging buffer.
+    fn upload_fields(&self, device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder, fields: &[AtlasField]) {
+        let texel = self.format.texel_size();
+        let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
+        // Rows padded to the copy alignment; every field starts on a padded row.
+        let row_bytes = |f: &AtlasField| (f.width * texel).next_multiple_of(align);
+        let total: u32 = fields.iter().map(|f| row_bytes(f) * f.height).sum();
+        let mut data = vec![0u8; total as usize];
+        let mut offsets = Vec::with_capacity(fields.len());
+        let mut offset = 0usize;
+        for f in fields {
+            offsets.push(offset as u64);
+            let (src_row, dst_row) = ((f.width * texel) as usize, row_bytes(f) as usize);
+            for (r, src) in f.texels.chunks_exact(src_row).take(f.height as usize).enumerate() {
+                let at = offset + r * dst_row;
+                data[at..at + src_row].copy_from_slice(src);
+            }
+            offset += dst_row * f.height as usize;
+        }
+        let staging = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("glyphux atlas upload"),
+            contents: &data,
+            usage: wgpu::BufferUsages::COPY_SRC,
+        });
+        for (f, offset) in fields.iter().zip(offsets) {
+            encoder.copy_buffer_to_texture(
+                wgpu::TexelCopyBufferInfo {
+                    buffer: &staging,
+                    layout: wgpu::TexelCopyBufferLayout {
+                        offset,
+                        bytes_per_row: Some(row_bytes(f)),
+                        rows_per_image: Some(f.height),
+                    },
+                },
+                wgpu::TexelCopyTextureInfo {
+                    texture: &self.texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d {
+                        x: f.x,
+                        y: f.y,
+                        z: f.layer,
+                    },
+                    aspect: wgpu::TextureAspect::All,
+                },
+                wgpu::Extent3d {
+                    width: f.width,
+                    height: f.height,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
     }
 
     fn grow_texture(&mut self, device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder, pages: u32) {
         if pages <= self.texture_pages {
             return;
         }
-        let texture = atlas_texture(device, self.format, self.size, pages);
+        let texture = atlas_texture(device, self.format, self.size, pages, self.passes.is_some());
         if self.texture_pages > 0 {
             encoder.copy_texture_to_texture(
                 self.texture.as_image_copy(),
@@ -254,9 +348,12 @@ impl AtlasTexture {
         batch: &FieldBatch,
         mut profiler: Option<&mut crate::profile::GpuProfiler>,
     ) {
+        let Some(passes) = &self.passes else {
+            return;
+        };
         let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("glyphux atlas store"),
-            layout: &self.store_layout,
+            layout: &passes.store_layout,
             entries: &[
                 batch.entry(Binding::Glyphs),
                 batch.entry(Binding::Work),
@@ -273,7 +370,7 @@ impl AtlasTexture {
             label: Some("glyphux atlas store"),
             timestamp_writes: tw,
         });
-        pass.set_pipeline(&self.store);
+        pass.set_pipeline(&passes.store);
         pass.set_bind_group(0, &bg, &[]);
         let (x, y) = batch.workgroups;
         pass.dispatch_workgroups(x, y, 1);

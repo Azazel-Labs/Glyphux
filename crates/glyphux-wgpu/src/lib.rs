@@ -18,9 +18,9 @@ pub use field::{FieldBatch, FieldGenerator};
 #[cfg(not(target_arch = "wasm32"))]
 pub use field::{read_field, read_stencil, read_texture_layer, read_texture_rows};
 pub use glyphux_gpu::{
-    AtlasConfig, AtlasConfigError, AtlasFormat, AtlasGlyph, AtlasStats, Batch, Binding, FieldJob, FieldKind,
-    FieldLayout, GlyphInstance, GlyphKey, GpuShape, Kernel, Length, PreparedJob, ResolvedStyle, Shadow, TILE,
-    TextStyle, Units, glyphux, pack, prepare_job, shader_source, units,
+    AtlasConfig, AtlasConfigError, AtlasField, AtlasFormat, AtlasGlyph, AtlasStats, Batch, Binding, FieldJob,
+    FieldKind, FieldLayout, Generator, GlyphInstance, GlyphKey, GpuShape, Kernel, Length, PreparedJob, ResolvedStyle,
+    Shadow, TILE, TextStyle, Units, glyphux, pack, prepare_job, shader_source, units,
 };
 #[cfg(feature = "shaping")]
 pub use glyphux_gpu::{ShapedGlyph, ShapedLine, Shaper, ShapingFont, shaping, split_runs, split_runs_with};

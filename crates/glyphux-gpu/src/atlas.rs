@@ -1,11 +1,13 @@
-//! A glyph cache in the pages of a texture array, filled on demand by the GPU generator.
+//! A glyph cache in the pages of a texture array, filled on demand by the GPU generator (or,
+//! for backends without compute shaders, by the CPU generator: [`Generator::Cpu`]).
 //!
 //! Each glyph is generated at a *level* (field texels per em, a power of two) chosen from
 //! the size it is displayed at, so small text gets small fields and large text gets enough
 //! resolution, and the same glyph can live at several levels. Requests during a frame are
 //! collected and packed into one batch by [`GlyphAtlas::take_batch`]; a backend runs it and
 //! stores the fields in its texture, and the returned placements are valid for drawing from
-//! then on. When the atlas is full, the least recently used layer that was not used in the
+//! then on. With [`Generator::Cpu`], [`GlyphAtlas::take_fields`] returns the finished texels
+//! instead, for the backend to upload. When the atlas is full, the least recently used layer that was not used in the
 //! current frame is recycled.
 //!
 //! This is the atlas' logic only: the texture and the passes belong to a backend
@@ -19,6 +21,7 @@ use glyphux::gpu::FieldKind;
 use glyphux::{DEFAULT_ANGLE_THRESHOLD, ErrorCorrectionConfig, Projection, Range, Shape, Transform, Vec2};
 
 use crate::field::{Batch, pack};
+use crate::workers::Prepared;
 
 /// Atlas configuration.
 #[derive(Clone, Debug)]
@@ -83,6 +86,40 @@ pub struct AtlasConfig {
     /// alone leaves specks inside the fill next to the points where contours cross. `None`:
     /// off.
     pub resolve_overlaps: Option<glyphux::FillRule>,
+    /// Where the fields are generated: in a backend's compute passes ([`GlyphAtlas::take_batch`])
+    /// or on the CPU workers ([`GlyphAtlas::take_fields`]), for backends without compute
+    /// shaders such as WebGL 2.
+    pub generator: Generator,
+}
+
+/// Where an atlas' distance fields are generated ([`AtlasConfig::generator`]).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Generator {
+    /// In compute passes: [`GlyphAtlas::take_batch`] packs the requested glyphs into a
+    /// [`Batch`] whose kernels a backend runs on its device.
+    #[default]
+    Gpu,
+    /// On the CPU, with glyphux's generator, on the worker threads (or, without threads, in
+    /// [`GlyphAtlas::take_fields`]), which returns each glyph's texels in the atlas format for
+    /// the backend to upload: no compute shaders or storage textures needed. The texels are the
+    /// ones the store pass would write, except that every texel is computed exactly (the GPU's
+    /// narrow band only bounds far texels, which differs beyond the range in float formats)
+    /// and overlapping contours are handled whatever their number.
+    Cpu,
+}
+
+/// A glyph's field generated on the CPU ([`GlyphAtlas::take_fields`]), to upload into the
+/// rectangle at `x`, `y` of page `layer`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct AtlasField {
+    pub layer: u32,
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+    /// Texels in the atlas format ([`AtlasFormat::texel_size`] bytes each, little-endian),
+    /// rows top to bottom, `width * texel_size` bytes per row with no padding.
+    pub texels: Vec<u8>,
 }
 
 impl Default for AtlasConfig {
@@ -109,6 +146,7 @@ impl Default for AtlasConfig {
             max_range_tier: 3,
             sign_correction: Some(glyphux::FillRule::NonZero),
             resolve_overlaps: Some(glyphux::FillRule::NonZero),
+            generator: Generator::Gpu,
         }
     }
 }
@@ -256,8 +294,10 @@ impl Layer {
 struct Pending {
     id: u64,
     ck: CacheKey,
-    /// Layer and texel rows of its rectangle.
+    /// Layer, first column, width and texel rows of its rectangle.
     layer: u32,
+    x: u32,
+    width: u32,
     rows: std::ops::Range<u32>,
 }
 
@@ -272,7 +312,7 @@ pub struct GlyphAtlas {
     detail: FxHashMap<GlyphKey, u32>,
     workers: crate::workers::Workers,
     /// Preparations finished before `flush` asked for them, by job id.
-    ready: FxHashMap<u64, Option<Box<crate::field::PreparedJob>>>,
+    ready: FxHashMap<u64, Option<Prepared>>,
     next_job: u64,
     probes_in_flight: HashSet<GlyphKey, FxBuild>,
     /// Glyphs a probe raised, for [`GlyphAtlas::take_upgrades`].
@@ -539,6 +579,8 @@ impl GlyphAtlas {
             id,
             ck,
             layer,
+            x,
+            width,
             rows: y..y + height,
         });
         self.pending_texels += width * height;
@@ -670,12 +712,69 @@ impl GlyphAtlas {
     /// or finishing, their preparation on the workers), or `None` if there is nothing to
     /// generate. The backend grows its texture to [`Self::page_count`] pages, runs the batch's
     /// kernels ([`Batch::kernels`]) and then [`crate::field::Kernel::Store`] into the texture.
+    ///
+    /// Always `None` with [`Generator::Cpu`], whose glyphs [`Self::take_fields`] returns.
     pub fn take_batch(&mut self) -> Option<Batch> {
+        if self.config.generator != Generator::Gpu {
+            return None;
+        }
+        let jobs: Vec<crate::field::PreparedJob> = self
+            .finish_pending()
+            .into_iter()
+            .filter_map(|(_, prepared)| match prepared {
+                Prepared::Job(job) => Some(*job),
+                Prepared::Texels(_) => None,
+            })
+            .collect();
+        if jobs.is_empty() {
+            return None;
+        }
+        let batch = pack(&jobs);
+        self.stats.generated += jobs.len() as u64;
+        self.stats.generated_texels += u64::from(batch.texels);
+        Some(batch)
+    }
+
+    /// With [`Generator::Cpu`]: the fields of every glyph queued since the last call (waiting
+    /// for, or finishing, their generation on the workers). The backend grows its texture to
+    /// [`Self::page_count`] pages and uploads each field into its rectangle; the placements are
+    /// valid for drawing from then on. Glyphs with nothing to draw are left out (they are
+    /// blank, see [`AtlasGlyph::is_visible`]).
+    ///
+    /// Always empty with [`Generator::Gpu`], whose glyphs [`Self::take_batch`] returns.
+    pub fn take_fields(&mut self) -> Vec<AtlasField> {
+        if self.config.generator != Generator::Cpu {
+            return Vec::new();
+        }
+        let fields: Vec<AtlasField> = self
+            .finish_pending()
+            .into_iter()
+            .filter_map(|(p, prepared)| match prepared {
+                Prepared::Texels(texels) => Some(AtlasField {
+                    layer: p.layer,
+                    x: p.x,
+                    y: p.rows.start,
+                    width: p.width,
+                    height: p.rows.end - p.rows.start,
+                    texels,
+                }),
+                Prepared::Job(_) => None,
+            })
+            .collect();
+        self.stats.generated += fields.len() as u64;
+        self.stats.generated_texels += fields.iter().map(|f| u64::from(f.width * f.height)).sum::<u64>();
+        fields
+    }
+
+    /// Takes every glyph queued since the last call with its preparation (waiting for, or
+    /// finishing, the workers' jobs) and records the rows they are written to. Glyphs that
+    /// turned out to have nothing to draw become blank and are left out.
+    fn finish_pending(&mut self) -> Vec<(Pending, Prepared)> {
         self.workers.run_probes_here(self.config.probes_per_flush);
         if self.pending.is_empty() {
             let done = self.workers.take_done();
             self.route(done);
-            return None;
+            return Vec::new();
         }
         let pending = std::mem::take(&mut self.pending);
         self.pending_texels = 0;
@@ -683,11 +782,10 @@ impl GlyphAtlas {
         let outstanding = pending.iter().filter(|p| !self.ready.contains_key(&p.id)).count();
         let done = self.workers.finish_preps(outstanding);
         self.route(done);
-        let mut jobs: Vec<crate::field::PreparedJob> = Vec::with_capacity(pending.len());
-        for p in &pending {
+        let mut out = Vec::with_capacity(pending.len());
+        for p in pending {
             match self.ready.remove(&p.id).flatten() {
-                Some(job) => {
-                    jobs.push(*job);
+                Some(prepared) => {
                     let layer = p.layer as usize;
                     if self.written.len() <= layer {
                         self.written.resize(layer + 1, None);
@@ -697,19 +795,14 @@ impl GlyphAtlas {
                         Some(r) => r.start.min(p.rows.start)..r.end.max(p.rows.end),
                         None => p.rows.clone(),
                     });
+                    out.push((p, prepared));
                 }
                 // Nothing to draw after all (e.g. only degenerate edges), or the preparation
                 // failed: the glyph's rectangle would show whatever the atlas held there.
                 None => self.make_blank(p.ck),
             }
         }
-        if jobs.is_empty() {
-            return None;
-        }
-        let batch = pack(&jobs);
-        self.stats.generated += jobs.len() as u64;
-        self.stats.generated_texels += u64::from(batch.texels);
-        Some(batch)
+        out
     }
 }
 
