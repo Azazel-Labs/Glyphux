@@ -12,6 +12,8 @@ It writes, into the plugin's content (/Glyphux/Materials):
 * M_GlyphuxUI: the material of Glyphux Text widgets (User Interface domain);
 * M_GlyphuxWorld and M_GlyphuxWorldNoDepthTest: the materials of Glyphux Text components;
 * M_GlyphuxGlyph: one glyph per Niagara sprite or mesh fragment;
+* M_GlyphuxGlyphInstanced: one glyph per instance of an instanced static mesh, its quad index
+  the instance's first custom data float (without Niagara, NIAGARA.md);
 * M_GlyphuxSurface: a whole text on any mesh, by its texture coordinates;
 * MF_GlyphuxGlyph and MF_GlyphuxSurface: the same two as material functions (Color and
   Opacity out), to put text into materials of your own (lit, opaque, over a base color).
@@ -180,8 +182,17 @@ def quad_parameter(g, y):
     return d
 
 
-def build(g, kind, default):
-    """The Custom node of kind (TEXT, GLYPH or SURFACE) and what feeds it."""
+def instance_quad(g, y):
+    """The instance's quad index: its first custom data float (-1 draws nothing)."""
+    d = g.add(unreal.MaterialExpressionPerInstanceCustomData, -1100, y)
+    d.set_editor_property("data_index", 0)
+    d.set_editor_property("const_default_value", -1.0)
+    return d
+
+
+def build(g, kind, default, instanced=False):
+    """The Custom node of kind (TEXT, GLYPH or SURFACE) and what feeds it; instanced, the
+    quad index from the instance's custom data rather than the particle's."""
     custom = g.add(unreal.MaterialExpressionCustom, -450, 0)
     custom.set_editor_property("code", kind["code"])
     custom.set_editor_property("output_type", unreal.CustomMaterialOutputType.CMOT_FLOAT4)
@@ -212,14 +223,19 @@ def build(g, kind, default):
     if g.function:
         uv = g.function_input("UV", unreal.FunctionInputType.FUNCTION_INPUT_VECTOR2, uv, 0, 400)
     sources["UV"] = lambda: (uv, "")
-    if "Quad" in kind["inputs"]:
+    if "Quad" in kind["inputs"] and g.function:
+        # The material using the function feeds it: a Dynamic Parameter node needs a material
+        # (the engine asserts on one in a function). -1 draws nothing.
+        preview = g.add(unreal.MaterialExpressionConstant, -1100, 475)
+        preview.set_editor_property("r", -1.0)
+        quad = g.function_input("Quad", unreal.FunctionInputType.FUNCTION_INPUT_SCALAR, preview, 1, 475)
+        sources["Quad"] = lambda: (quad, "")
+    elif "Quad" in kind["inputs"] and instanced:
+        quad = instance_quad(g, 475)
+        sources["Quad"] = lambda: (quad, "")
+    elif "Quad" in kind["inputs"]:
         quad = quad_parameter(g, 475)
-        output = "GlyphuxQuad"
-        if g.function:
-            # The dynamic parameter, connected by name, is the input's default.
-            quad = g.function_input("Quad", unreal.FunctionInputType.FUNCTION_INPUT_SCALAR, quad, 1, 475)
-            output = ""
-        sources["Quad"] = lambda: (quad, output)
+        sources["Quad"] = lambda: (quad, "GlyphuxQuad")
     for n in kind["inputs"]:
         source = sources[n]()
         output = ""
@@ -232,20 +248,21 @@ def build(g, kind, default):
 
 def split(g, custom):
     """The Custom node's color and opacity."""
+    # Every channel set: a new mask does not start with all four off.
     rgb = g.add(unreal.MaterialExpressionComponentMask, -200, -50)
-    for c in ("r", "g", "b"):
-        rgb.set_editor_property(c, True)
     alpha = g.add(unreal.MaterialExpressionComponentMask, -200, 100)
-    alpha.set_editor_property("a", True)
+    for c in ("r", "g", "b", "a"):
+        rgb.set_editor_property(c, c != "a")
+        alpha.set_editor_property(c, c == "a")
     MEL.connect_material_expressions(custom, "", rgb, "")
     MEL.connect_material_expressions(custom, "", alpha, "")
     return rgb, alpha
 
 
-def text_material(m, kind, default):
+def text_material(m, kind, default, instanced=False):
     """A material of kind: its color and opacity, times the vertex color."""
     g = Graph(m)
-    rgb, alpha = split(g, build(g, kind, default))
+    rgb, alpha = split(g, build(g, kind, default, instanced))
     vertex = g.add(unreal.MaterialExpressionVertexColor, -200, 250)
     color = g.add(unreal.MaterialExpressionMultiply, 0, -50)
     MEL.connect_material_expressions(rgb, "", color, "A")
@@ -305,6 +322,11 @@ def main():
     glyph.set_editor_property("used_with_niagara_mesh_particles", True)
     text_material(glyph, GLYPH, default)
 
+    instanced = material("M_GlyphuxGlyphInstanced")
+    world(instanced)
+    instanced.set_editor_property("used_with_instanced_static_meshes", True)
+    text_material(instanced, GLYPH, default, instanced=True)
+
     surface = material("M_GlyphuxSurface")
     world(surface)
     for usage in ("used_with_geometry_collections", "used_with_skeletal_mesh", "used_with_niagara_mesh_particles"):
@@ -316,7 +338,8 @@ def main():
         GLYPH,
         default,
         "One Glyphux glyph (a Niagara sprite or mesh fragment). UV: the texture coordinates in the glyph's square "
-        "(default: texture coordinate 0). Quad: the glyph's quad index (default: the particle's first dynamic parameter).",
+        "(default: texture coordinate 0). Quad: the glyph's quad index (a Dynamic Parameter for particles, Per Instance Custom Data for "
+        "instanced meshes; unconnected, -1: nothing drawn).",
     )
     text_function(
         material_function("MF_GlyphuxSurface"),

@@ -18,6 +18,7 @@ or change them by hand.
 | `M_GlyphuxWorld` | Glyphux Text components | `GlyphuxShadeGlyph` |
 | `M_GlyphuxWorldNoDepthTest` | components with No Depth Test | `GlyphuxShadeGlyph` |
 | `M_GlyphuxGlyph` | one glyph per Niagara sprite or mesh fragment | `GlyphuxShadeGlyph` |
+| `M_GlyphuxGlyphInstanced` | one glyph per instance of an instanced static mesh | `GlyphuxShadeGlyph` |
 | `M_GlyphuxSurface` | a whole text on any mesh | `GlyphuxShadeSurface` |
 | `MF_GlyphuxGlyph`, `MF_GlyphuxSurface` | the last two inside your own materials | same |
 | `T_GlyphuxLinearDefault` | the texture parameters' default (1x1, linear) | |
@@ -56,7 +57,8 @@ Every material is the same few nodes:
    names must be exactly these).
 2. Its result's RGB (a Component Mask) times the **Vertex Color** RGB into **Emissive Color**,
    its A times the Vertex Color's A into **Opacity**. The vertex color is the widget's tint,
-   or the particle's color.
+   or the particle's color. A new Component Mask has R and G checked: the A mask must have
+   only A, or Opacity takes the red channel and the text's quads show as blocks of its color.
 
 Texture Object inputs give the code the texture and its sampler (`Atlas` and
 `AtlasSampler`), which the functions take as arguments.
@@ -90,6 +92,9 @@ return GlyphuxShadeGlyph(Atlas, AtlasSampler, Records, ColorPages, ColorPagesSam
 return GlyphuxShadeGlyph(Atlas, AtlasSampler, Records, ColorPages, ColorPagesSampler, Tables, SurfaceQuads, UV, Quad, PxRange, Pages, Time);
 ```
 
+`M_GlyphuxGlyphInstanced` is the same with `Quad` from a **Per Instance Custom Data** node
+(Data Index 0, default -1): the instance's first custom data float.
+
 **Surface** (`M_GlyphuxSurface`): inputs `Atlas`, `Records`, `ColorPages`, `Tables`,
 `SurfaceQuads`, `SurfaceGrid`, `UV` (Texture Coordinate 0, or any channel), `Box` (the
 `GlyphuxTextBox` vector parameter, all four channels: Append its R and G, its B and A, then
@@ -106,6 +111,7 @@ return GlyphuxShadeSurface(Atlas, AtlasSampler, Records, ColorPages, ColorPagesS
   **Unlit**, **Two Sided**. `M_GlyphuxWorldNoDepthTest` also has **Disable Depth Test**.
 * `M_GlyphuxGlyph`: Usage **Used with Niagara Sprites** and **Used with Niagara Mesh
   Particles**.
+* `M_GlyphuxGlyphInstanced`: Usage **Used with Instanced Static Meshes**.
 * `M_GlyphuxSurface`: Usage **Used with Geometry Collections** (so a fractured mesh's pieces
   keep the text), **Used with Skeletal Mesh** and **Used with Niagara Mesh Particles**.
 
@@ -145,8 +151,10 @@ text's coverage, with its outline, glow and shadow). Put text onto a lit, opaque
 * Roughness, Metallic: Lerp to the paint's, by Opacity.
 
 `MF_GlyphuxSurface` takes **UV** (default: Texture Coordinate 0), 0 to 1 across the text box;
-`MF_GlyphuxGlyph` takes **UV** and **Quad** (default: the particle's first dynamic
-parameter). Make a Material Instance Dynamic of your material and call **Bind To Material**
+`MF_GlyphuxGlyph` takes **UV** and **Quad**: connect the glyph's quad index, a **Dynamic
+Parameter** node's first output for particles or a **Per Instance Custom Data** node for
+instanced meshes (unconnected, -1, it draws nothing; a material function cannot hold a
+Dynamic Parameter itself). Make a Material Instance Dynamic of your material and call **Bind To Material**
 on the text component with it: the component sets the parameters now and whenever the text
 changes.
 

@@ -42,6 +42,19 @@ monolithic builds alike.
    `Content/Python/glyphux_materials.py` (Tools > Execute Python Script) to make the
    materials, and for shattering text, `Content/Python/glyphux_shards.py`. MATERIALS.md
    says what they make, to build the materials by hand instead.
+5. Target Shader Model 6. Glyphux's kernels and materials are SM6 HLSL, which DXC
+   compiles and FXC (SM5) does not: on Windows, Project Settings > Platforms > Windows >
+   D3D12 Targeted Shader Formats, **SM6** only, or in `Config/DefaultEngine.ini`:
+
+   ```ini
+   [/Script/WindowsTargetPlatform.WindowsTargetSettings]
+   DefaultGraphicsRHI=DefaultGraphicsRHI_DX12
+   -D3D12TargetedShaderFormats=PCD3D_SM5
+   +D3D12TargetedShaderFormats=PCD3D_SM6
+   ```
+
+   On SM5 or D3D11, the plugin logs an error and generates no glyphs, and the materials fail
+   to compile. Vulkan and Metal compile with DXC already.
 
 The crate's build also writes Ferreal's exporter, `Source/GlyphuxExporter`: an Unreal Build
 Tool plugin that exports the engine's reflection data, from which `ferreal::engine!` makes

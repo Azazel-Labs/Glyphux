@@ -3,6 +3,7 @@
 #include "RenderGraphBuilder.h"
 #include "RenderGraphUtils.h"
 #include "RenderTargetPool.h"
+#include "RHIStrings.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogGlyphuxGpu, Log, All);
 
@@ -15,6 +16,16 @@ FGlyphuxGpu::FGlyphuxGpu(int32 InPageSize, int32 InMaxPages)
 void FGlyphuxGpu::Run_RenderThread(FRHICommandListImmediate& RHICmdList, const FGlyphuxBatch& Batch, FRHITexture* Atlas)
 {
 	check(IsInRenderingThread());
+	if (!GlyphuxKernels::IsSupported())
+	{
+		static bool bLogged = false;
+		if (!bLogged)
+		{
+			bLogged = true;
+			UE_LOG(LogGlyphuxGpu, Error, TEXT("Glyphux's kernels need a shader platform with DXC (D3D12, Vulkan or Metal), not %s: no glyphs are generated"), *LexToString(GMaxRHIShaderPlatform));
+		}
+		return;
+	}
 	FRDGBuilder GraphBuilder(RHICmdList, RDG_EVENT_NAME("Glyphux"));
 
 	// The pages: allocated once at their largest (the atlas never has more), kept between batches.

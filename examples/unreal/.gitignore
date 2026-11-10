@@ -6,8 +6,20 @@ DerivedDataCache/
 .vs/
 .idea/
 *.sln
+*.slnx
+# Also written by generating the project files: what Visual Studio needs, and the engine's
+# folder for the exporter's csproj.
+.vsconfig
+*.csproj.props
 *.code-workspace
 Plugins/*/Binaries/
 Plugins/*/Intermediate/
 # What .NET builds of the plugins' Unreal Build Tool plugins (Ferreal's exporter).
 Plugins/*/Source/*/obj/
+# The assets Content/Python/setup_demo.py and the plugin's scripts make: the demo ships none.
+*.uasset
+*.umap
+# What Unreal's Python leaves next to the scripts.
+__pycache__/
+# The engine's default input settings, which the editor writes out: the demo changes none.
+Config/DefaultInput.ini

@@ -408,10 +408,10 @@ float cubic_root(float ca, float cb, float cc, float cd, float lo0_, float hi0_,
     return _e131;
 }
 
-typedef float ret_Constructarray4_float_[4];
+struct ret_Constructarray4_float_ { float v[4]; };
 ret_Constructarray4_float_ Constructarray4_float_(float arg0, float arg1, float arg2, float arg3) {
     float ret[4] = { arg0, arg1, arg2, arg3 };
-    return ret;
+    { ret_Constructarray4_float_ glyphux_ret; glyphux_ret.v = ret; return glyphux_ret; }
 }
 
 float ZeroValuefloat() {
@@ -423,7 +423,7 @@ KR quad_kr(Edge e_1, float2 p_2)
     float best = (float)0;
     float best_t = 0.0;
     uint kind = 0u;
-    float bp[4] = Constructarray4_float_(0.0, 1.0, 1.0, 1.0);
+    float bp[4] = Constructarray4_float_(0.0, 1.0, 1.0, 1.0).v;
     uint n = 1u;
     float c0_ = 2.0;
     float c1_ = 2.0;
@@ -795,7 +795,7 @@ float quintic_root(float c_3[6], float lo0_1, float hi0_1, float flo_2, float fh
     return _e125;
 }
 
-typedef float ret_bernstein5_[6];
+struct ret_bernstein5_ { float v[6]; };
 ret_bernstein5_ bernstein5_(float coef[6], float a_3, float h)
 {
     float t5_[6] = (float[6])0;
@@ -903,7 +903,7 @@ ret_bernstein5_ bernstein5_(float coef[6], float a_3, float h)
     float _e132 = dk[5];
     b_3[5] = (((((_e118 + _e120) + _e123) + _e126) + _e129) + _e132);
     float _e134[6] = b_3;
-    return _e134;
+    { ret_bernstein5_ glyphux_ret; glyphux_ret.v = _e134; return glyphux_ret; }
 }
 
 Changes ConstructChanges(uint arg0, float arg1) {
@@ -1001,15 +1001,15 @@ CubicCtx ConstructCubicCtx(float2 arg0, float2 arg1, float2 arg2, float2 arg3) {
     return ret;
 }
 
-typedef float ret_Constructarray6_float_[6];
+struct ret_Constructarray6_float_ { float v[6]; };
 ret_Constructarray6_float_ Constructarray6_float_(float arg0, float arg1, float arg2, float arg3, float arg4, float arg5) {
     float ret[6] = { arg0, arg1, arg2, arg3, arg4, arg5 };
-    return ret;
+    { ret_Constructarray6_float_ glyphux_ret; glyphux_ret.v = ret; return glyphux_ret; }
 }
 
-typedef float ret_ZeroValuearray6_float_[6];
+struct ret_ZeroValuearray6_float_ { float v[6]; };
 ret_ZeroValuearray6_float_ ZeroValuearray6_float_() {
-    return (float[6])0;
+    { ret_ZeroValuearray6_float_ glyphux_ret; glyphux_ret.v = (float[6])0; return glyphux_ret; }
 }
 
 uint naga_f2u32(float value) {
@@ -1083,7 +1083,7 @@ KR cubic_kr(Edge e_2, float2 p_4, uint curve_base)
     const float _e75 = cv((base_2 + 11u));
     const float _e78 = cv((base_2 + 12u));
     const float _e81 = cv((base_2 + 13u));
-    float coef_1[6] = Constructarray6_float_(dot(q_3, cx_3.a), ((2.0 * dot(q_3, cx_3.b)) + _e22), ((3.0 * dot(q_3, cx_3.c)) + _e25), _e75, _e78, _e81);
+    float coef_1[6] = Constructarray6_float_(dot(q_3, cx_3.a), ((2.0 * dot(q_3, cx_3.b)) + _e22), ((3.0 * dot(q_3, cx_3.c)) + _e25), _e75, _e78, _e81).v;
     float _e83 = best_1;
     sb = sqrt(_e83);
     uint2 loop_bound_8 = uint2(4294967295u, 4294967295u);
@@ -1121,7 +1121,7 @@ KR cubic_kr(Edge e_2, float2 p_4, uint curve_base)
             const float _e132 = cv((samples + (3u * _e129)));
             uint _e134 = i_5;
             const float _e139 = cv(((samples + (3u * _e134)) + 3u));
-            bern = ZeroValuearray6_float_();
+            bern = ZeroValuearray6_float_().v;
             j_2 = 1u;
             uint2 loop_bound_9 = uint2(4294967295u, 4294967295u);
             bool loop_init_9 = true;
@@ -1163,7 +1163,7 @@ KR cubic_kr(Edge e_2, float2 p_4, uint curve_base)
                 loop_bound_10 -= uint2(loop_bound_10.y == 0u, 1u);
                 lo_2 = ZeroValuefloat();
                 hi_2 = ZeroValuefloat();
-                bb = ZeroValuearray6_float_();
+                bb = ZeroValuearray6_float_().v;
                 bool _e189 = first;
                 if (_e189) {
                     float _e190 = pa_1;
@@ -1207,7 +1207,7 @@ KR cubic_kr(Edge e_2, float2 p_4, uint curve_base)
                     float _e231 = lo_2;
                     float _e232 = hi_2;
                     float _e233 = lo_2;
-                    const float _e235[6] = bernstein5_(coef_1, _e231, (_e232 - _e233));
+                    const float _e235[6] = bernstein5_(coef_1, _e231, (_e232 - _e233)).v;
                     bb = _e235;
                     float _e237 = lo_2;
                     const float _e238 = poly5_(coef_1, _e237);
@@ -1421,15 +1421,15 @@ float chan_ub(uint c_5)
     return ((_e8 == 3u) ? _e6 : _e3);
 }
 
-typedef float ret_Constructarray3_float_[3];
+struct ret_Constructarray3_float_ { float v[3]; };
 ret_Constructarray3_float_ Constructarray3_float_(float arg0, float arg1, float arg2) {
     float ret[3] = { arg0, arg1, arg2 };
-    return ret;
+    { ret_Constructarray3_float_ glyphux_ret; glyphux_ret.v = ret; return glyphux_ret; }
 }
 
 void update_thresholds()
 {
-    float b_5[3] = Constructarray3_float_(0.0, 0.0, 0.0);
+    float b_5[3] = Constructarray3_float_(0.0, 0.0, 0.0).v;
     uint c_6 = 0u;
     float base = 0.0;
 

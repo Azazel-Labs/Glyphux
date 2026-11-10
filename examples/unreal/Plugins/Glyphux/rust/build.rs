@@ -108,6 +108,8 @@ namespace GlyphuxKernels\n{{\n\
 \tconstexpr int32 Store = {store};\n\n\
 \t/** What a batch binds: views of its buffers by Binding index, and the atlas pages. */\n\
 \tstruct FBindings\n\t{{\n\t\tFRDGBufferSRVRef SRV[NumBindings] = {{}};\n\t\tFRDGBufferUAVRef UAV[NumBindings] = {{}};\n\t\tFRDGTextureUAVRef Atlas = nullptr;\n\t}};\n\n\
+\t/** Whether the kernels run here: they compile with DXC, so not on platforms without it, nor on D3D11, which cannot load its shaders. */\n\
+\tGLYPHUXSHADERS_API bool IsSupported();\n\n\
 \t/** Whether a binding is written by the kernels (bound as a UAV). */\n\
 \tGLYPHUXSHADERS_API bool IsOutput(int32 Binding);\n\n\
 \t/** The binding's name, for debugging. */\n\
@@ -141,7 +143,7 @@ fn shader_class(kernel: Kernel) -> String {
 
 fn kernels_source(kernels: &[(Kernel, HlslKernel)]) -> String {
     let mut o = format!(
-        "// {BANNER}\n\n#include \"Generated/GlyphuxKernels.h\"\n\n#include \"DataDrivenShaderPlatformInfo.h\"\n#include \"GlobalShader.h\"\n#include \"RenderGraphBuilder.h\"\n#include \"RenderGraphUtils.h\"\n#include \"ShaderParameterStruct.h\"\n"
+        "// {BANNER}\n\n#include \"Generated/GlyphuxKernels.h\"\n\n#include \"DataDrivenShaderPlatformInfo.h\"\n#include \"DynamicRHI.h\"\n#include \"GlobalShader.h\"\n#include \"RenderGraphBuilder.h\"\n#include \"RenderGraphUtils.h\"\n#include \"ShaderCompilerCore.h\"\n#include \"ShaderParameterStruct.h\"\n"
     );
     for (kernel, k) in kernels {
         let class = shader_class(*kernel);
@@ -161,11 +163,12 @@ fn kernels_source(kernels: &[(Kernel, HlslKernel)]) -> String {
         }
         let _ = writeln!(
             o,
-            "\tEND_SHADER_PARAMETER_STRUCT()\n\n\tstatic bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)\n\t{{\n\t\treturn IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5);\n\t}}\n}};\n\nIMPLEMENT_GLOBAL_SHADER({class}, \"/Plugin/Glyphux/Private/Generated/{}.usf\", \"{}\", SF_Compute);",
+            "\tEND_SHADER_PARAMETER_STRUCT()\n\n\tstatic bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)\n\t{{\n\t\treturn IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5) && FDataDrivenShaderPlatformInfo::GetSupportsDxc(Parameters.Platform);\n\t}}\n\n\tstatic void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)\n\t{{\n\t\tFGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);\n\t\t// naga writes Shader Model 6 HLSL, whose loops FXC cannot always compile.\n\t\tOutEnvironment.CompilerFlags.Add(CFLAG_ForceDXC);\n\t}}\n}};\n\nIMPLEMENT_GLOBAL_SHADER({class}, \"/Plugin/Glyphux/Private/Generated/{}.usf\", \"{}\", SF_Compute);",
             kernel.entry_point(),
             hlsl::ENTRY_POINT
         );
     }
+    o.push_str("\nbool GlyphuxKernels::IsSupported()\n{\n\treturn FDataDrivenShaderPlatformInfo::GetSupportsDxc(GMaxRHIShaderPlatform) && RHIGetInterfaceType() != ERHIInterfaceType::D3D11;\n}\n");
     o.push_str("\nbool GlyphuxKernels::IsOutput(int32 Binding)\n{\n\tswitch (Binding)\n\t{\n");
     for b in glyphux_gpu::Binding::ALL {
         if !b.read_only() {

@@ -112,11 +112,15 @@ def mesh(name, polygon, center):
     # A fan, wound to face +X (the polygon runs clockwise seen from +X: u is -Y, v is -Z).
     for k in range(1, len(polygon) - 1):
         description.create_triangle(group, [instance(0), instance(k + 1), instance(k)])
-    # The slot first, so the build finds its section's material.
+    # The slot first, so the build finds its section's material. Without the change
+    # notification: it would start an async rebuild that finishes inside the build below, which
+    # then deletes the render data that rebuild made without releasing it (a fatal error in
+    # an open editor).
     material = unreal.load_asset("/Glyphux/Materials/M_GlyphuxGlyph")
     slot = unreal.StaticMaterial(material_interface=material, material_slot_name="Glyph")
-    asset.set_editor_property("static_materials", [slot])
-    asset.build_from_static_mesh_descriptions([description])
+    asset.set_editor_property("static_materials", [slot], unreal.PropertyAccessChangeNotifyMode.NEVER)
+    # The full build (not the fast one meant for meshes made at runtime), as an imported mesh has.
+    asset.build_from_static_mesh_descriptions([description], False, False)
     ASSETS.save_loaded_asset(asset)
     return asset
 

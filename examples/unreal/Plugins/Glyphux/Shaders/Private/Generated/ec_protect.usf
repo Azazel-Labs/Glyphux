@@ -277,16 +277,16 @@ bool ec_texel(uint3 wid_1, uint3 lid_1)
     return true;
 }
 
-typedef int2 ret_Constructarray8_int2_[8];
+struct ret_Constructarray8_int2_ { int2 v[8]; };
 ret_Constructarray8_int2_ Constructarray8_int2_(int2 arg0, int2 arg1, int2 arg2, int2 arg3, int2 arg4, int2 arg5, int2 arg6, int2 arg7) {
     int2 ret[8] = { arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7 };
-    return ret;
+    { ret_Constructarray8_int2_ glyphux_ret; glyphux_ret.v = ret; return glyphux_ret; }
 }
 
 [numthreads(8, 8, 1)]
 void main(uint3 wid : SV_GroupID, uint3 lid : SV_GroupThreadID)
 {
-    int2 offs[8] = Constructarray8_int2_(int2(int(1), int(0)), int2(int(-1), int(0)), int2(int(0), int(1)), int2(int(0), int(-1)), int2(int(1), int(1)), int2(int(-1), int(-1)), int2(int(-1), int(1)), int2(int(1), int(-1)));
+    int2 offs[8] = Constructarray8_int2_(int2(int(1), int(0)), int2(int(-1), int(0)), int2(int(0), int(1)), int2(int(0), int(-1)), int2(int(1), int(1)), int2(int(-1), int(-1)), int2(int(-1), int(1)), int2(int(1), int(-1))).v;
     uint k = 0u;
     bool local = (bool)0;
     bool local_1 = (bool)0;

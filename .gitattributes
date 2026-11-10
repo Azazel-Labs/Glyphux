@@ -14,6 +14,8 @@
 *.svg    text eol=lf
 *.gdshader     text eol=lf
 *.gdshaderinc  text eol=lf
+# cmd misreads labels and goto in batch files with LF line endings.
+*.bat    text eol=crlf
 
 # Written by the Godot addon's build (rust/build.rs): collapsed in diffs on GitHub.
 examples/godot/addons/glyphux/shaders/generated/** linguist-generated=true

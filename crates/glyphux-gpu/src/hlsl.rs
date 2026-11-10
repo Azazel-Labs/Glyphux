@@ -16,6 +16,8 @@
 //! does, through shader reflection) assign their own. A host that needs explicit registers
 //! can number [`HlslKernel::bindings`] in order.
 
+use std::fmt::Write as _;
+
 use naga::back::hlsl;
 
 use crate::{AtlasFormat, Binding, Kernel};
@@ -97,7 +99,110 @@ fn write(
     hlsl::Writer::new(&mut out, &options, &pipeline)
         .write(module, info, None)
         .map_err(|e| e.to_string())?;
-    Ok(strip_registers(&out))
+    Ok(wrap_array_returns(&strip_registers(&out)))
+}
+
+/// Makes naga's functions that return arrays return a struct holding the array instead:
+/// `typedef T ret_f[N]; ret_f f(...)` becomes `struct ret_f { T v[N]; }; ret_f f(...)`, its
+/// `return x;` statements fill the struct, and its calls read `.v`. HLSL compilers take the
+/// typedef, but Unreal's shader minifier (dead code removal, on by default) names a typedef
+/// after its last token, `[N]` here, so it never sees the type used and drops it.
+fn wrap_array_returns(hlsl: &str) -> String {
+    let mut text = hlsl.to_string();
+    let typedefs: Vec<(String, String, String)> = hlsl
+        .lines()
+        .filter_map(|line| {
+            let decl = line.strip_prefix("typedef ")?.strip_suffix(';')?;
+            let (ty, rest) = decl.split_once(' ')?;
+            let open = rest.find('[')?;
+            Some((ty.to_string(), rest[..open].to_string(), rest[open..].to_string()))
+        })
+        .collect();
+    for (ty, ret, dims) in typedefs {
+        text = text.replacen(
+            &format!("typedef {ty} {ret}{dims};"),
+            &format!("struct {ret} {{ {ty} v{dims}; }};"),
+            1,
+        );
+        // The function returning it: `ret_f f(` in the first column.
+        let head = format!("\n{ret} ");
+        let Some(at) = text.find(&head) else { continue };
+        let start = at + head.len();
+        let Some(function) = text[start..].split('(').next().map(str::trim).map(str::to_string) else {
+            continue;
+        };
+        let Some(len) = text[start..].find("\n}") else { continue };
+        let end = start + len;
+        let body = wrap_returns(&text[start..end], &ret);
+        text = format!("{}{body}{}", &text[..start], &text[end..]);
+        text = read_member(&text, &function, &format!("{ret} "));
+    }
+    text
+}
+
+/// `return x;` in `body` as `{ ret glyphux_ret; glyphux_ret.v = x; return glyphux_ret; }`.
+fn wrap_returns(body: &str, ret: &str) -> String {
+    let mut out = String::with_capacity(body.len() + 64);
+    let mut rest = body;
+    while let Some(at) = rest.find("return ") {
+        out.push_str(&rest[..at]);
+        rest = &rest[at + "return ".len()..];
+        let Some(end) = rest.find(';') else { break };
+        let _ = write!(
+            out,
+            "{{ {ret} glyphux_ret; glyphux_ret.v = {}; return glyphux_ret; }}",
+            &rest[..end]
+        );
+        rest = &rest[end + 1..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Appends `.v` to every call of `function` in `text`, except its definition (the call
+/// preceded by `definition`, its return type).
+fn read_member(text: &str, function: &str, definition: &str) -> String {
+    let pattern = format!("{function}(");
+    let mut out = String::with_capacity(text.len() + 64);
+    let mut rest = text;
+    // The closing parentheses still to mark, by their depth below the current position.
+    let mut pending: Vec<usize> = Vec::new();
+    let mut depth = 0usize;
+    loop {
+        let next_call = rest.find(&pattern).filter(|&at| {
+            rest[..at].chars().next_back().is_none_or(|c| !is_ident(c))
+                && !(at == 0 && out.chars().next_back().is_some_and(is_ident))
+        });
+        let next_paren = rest.find(['(', ')']);
+        match (next_call, next_paren) {
+            (Some(call), Some(paren)) if call <= paren => {
+                let is_definition = rest[..call].ends_with(definition) || (call == 0 && out.ends_with(definition));
+                out.push_str(&rest[..call + pattern.len()]);
+                rest = &rest[call + pattern.len()..];
+                depth += 1;
+                if !is_definition {
+                    pending.push(depth);
+                }
+            }
+            (_, Some(paren)) => {
+                let c = rest.as_bytes()[paren];
+                out.push_str(&rest[..=paren]);
+                rest = &rest[paren + 1..];
+                if c == b'(' {
+                    depth += 1;
+                } else {
+                    if pending.last() == Some(&depth) {
+                        pending.pop();
+                        out.push_str(".v");
+                    }
+                    depth = depth.saturating_sub(1);
+                }
+            }
+            _ => break,
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 /// Removes every `: register(...)` assignment.
@@ -476,6 +581,26 @@ mod tests {
                 .replace_word_prefix("naga_", "p_naga_"),
             "p_naga_div(x) + my_naga_div(y)"
         );
+    }
+
+    #[test]
+    fn array_returns_are_wrapped() {
+        let hlsl = "typedef float ret_f[2];\nret_f f(float a) {\n    float r[2] = { a, a };\n    return r;\n}\n\nvoid g() {\n    float x[2] = f(h(1.0));\n    float y = f(f(2.0)[0])[1];\n}\n";
+        assert_eq!(
+            wrap_array_returns(hlsl),
+            "struct ret_f { float v[2]; };\nret_f f(float a) {\n    float r[2] = { a, a };\n    { ret_f glyphux_ret; glyphux_ret.v = r; return glyphux_ret; }\n}\n\nvoid g() {\n    float x[2] = f(h(1.0)).v;\n    float y = f(f(2.0).v[0]).v[1];\n}\n"
+        );
+        // Unreal's shader minifier drops array typedefs: none are left.
+        for kernel in Kernel::ALL {
+            let k = super::kernel(kernel, AtlasFormat::Rgba8Unorm).unwrap();
+            assert!(
+                !k.source.lines().any(|l| l.starts_with("typedef ") && l.contains('[')),
+                "{kernel:?}"
+            );
+        }
+        for lib in [text_library(), color_library_with("Texture2D tables")] {
+            assert!(!lib.lines().any(|l| l.starts_with("typedef ") && l.contains('[')));
+        }
     }
 
     #[test]

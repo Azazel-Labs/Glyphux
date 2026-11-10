@@ -87,7 +87,8 @@ pieces, other shapes: any mesh whose texture coordinates are its position in the
 
 Hide the text while its glyphs fly (its component's **Set Draw Text** off) and show it again
 after: it keeps laying out without drawing. The demo actor (`examples/unreal/Source`) does
-this every few seconds, with any system built as above.
+this every few seconds, with any system built as above (and without one, as the end of this
+page says).
 
 ## Without Niagara
 
@@ -96,3 +97,10 @@ quad index. Spawn anything per glyph with it: a mesh with a Material Instance Dy
 `M_GlyphuxGlyph` (from **Get Glyph Material**) whose `GlyphuxQuad` is set through the custom
 primitive data instead of the dynamic parameter (use `MF_GlyphuxGlyph` with its Quad input
 fed by a Custom Primitive Data node), or physics bodies that carry the fragments.
+
+For many glyphs or fragments, use instanced static meshes: one Instanced Static Mesh
+component per shard mesh, with **Num Custom Data Floats** 1 and the material **Get Glyph
+Material** makes of `M_GlyphuxGlyphInstanced`. Each instance is a fragment: transform as a
+Niagara mesh particle's (rotation the glyph's, scale (1, width, height), at its place in its
+glyph's square), its first custom data float the glyph's quad index. The demo actor does
+this when it has no Shatter System, flying the fragments apart and back on the CPU.

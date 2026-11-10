@@ -22,6 +22,9 @@ namespace GlyphuxKernels
 		FRDGTextureUAVRef Atlas = nullptr;
 	};
 
+	/** Whether the kernels run here: they compile with DXC, so not on platforms without it, nor on D3D11, which cannot load its shaders. */
+	GLYPHUXSHADERS_API bool IsSupported();
+
 	/** Whether a binding is written by the kernels (bound as a UAV). */
 	GLYPHUXSHADERS_API bool IsOutput(int32 Binding);
 
