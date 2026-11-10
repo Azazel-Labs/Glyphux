@@ -24,13 +24,12 @@ monolithic builds alike.
 
 1. Install [rustup](https://rustup.rs), once. The first build installs the rest: the Rust
    toolchain the crate pins (`rust/rust-toolchain.toml`), the one target the build needs,
-   and the crates. Ferreal and glyphux-gpu come from their repositories
-   ([Ferreal](https://github.com/Azazel-Labs/Ferreal), [Glyphux](https://github.com/Azazel-Labs/Glyphux)),
-   at the commits `rust/Cargo.toml` pins, until they are released with what the plugin
-   needs.
+   and the crates: glyphux-gpu from crates.io, and Ferreal from
+   [its repository](https://github.com/Azazel-Labs/Ferreal), at the commit `rust/Cargo.toml`
+   pins, until it is released.
 2. Copy `Plugins/Glyphux` into your project's `Plugins` folder, or open the demo project
    (`examples/unreal/GlyphuxDemo.uproject`), which has it. The plugin is self-contained:
-   it needs no other plugin, and in a copy, cargo fetches glyphux-gpu from the pinned commit.
+   it needs no other plugin, and in a copy, cargo fetches glyphux-gpu from crates.io.
    Inside this repository, `examples/unreal/.cargo/config.toml` builds it against the
    glyphux-gpu beside it instead.
 3. Build the project (from your IDE, or by opening the .uproject and letting Unreal build

@@ -1,7 +1,7 @@
 {
 	"FileVersion": 3,
-	"Version": 1,
-	"VersionName": "0.4.1",
+	"Version": 2,
+	"VersionName": "0.5.0",
 	"FriendlyName": "Glyphux",
 	"Description": "Text drawn from multi-channel distance fields that the GPU generates as needed: sharp at any size, with outline, glow, shadow, color emoji and BBCode. A UMG widget, a scene component, text on any surface and text as Niagara particles.",
 	"Category": "Rendering",
